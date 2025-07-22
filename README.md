@@ -47,8 +47,8 @@ A Python framework to emulate **Grok heavy** functionality using a powerful mult
 
 1. **Clone and setup environment:**
 ```bash
-git clone <https://github.com/Doriandarko/make-it-heavy.git>
-cd "make it heavy"
+git clone <https://github.com/mugenyume/make-it-heavy.git>
+cd "make-it-heavy"
 
 # Create virtual environment with uv
 uv venv
