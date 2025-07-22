@@ -62,6 +62,12 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -r requirements.txt
 ```
 
+(if you expirience problem with yaml for some reason, just execute the following command)
+```bash
+pip install pyyaml
+python -c "import yaml; print('YAML module working!')"
+```
+
 3. **Configure AI Provider:**
 
 **Option A - Cloud Providers (OpenRouter/Cerebras/SambaNova):**
