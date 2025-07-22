@@ -42,6 +42,35 @@ class OllamaProvider(BaseProvider):
             if not base_url.startswith(('http://', 'https://')):
                 raise ValueError("Ollama base_url must start with http:// or https://")
     
+    def _clean_response_content(self, content: str) -> str:
+        """
+        Clean response content by removing thinking tags and unwanted elements.
+        
+        Args:
+            content: Raw response content
+            
+        Returns:
+            Cleaned content
+        """
+        if not content:
+            return content
+        
+        import re
+        
+        # Remove thinking tags and their content
+        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+        content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL)
+        
+        # Remove empty thinking tags
+        content = re.sub(r'<think>\s*</think>', '', content)
+        content = re.sub(r'<thinking>\s*</thinking>', '', content)
+        
+        # Clean up extra whitespace
+        content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)  # Multiple newlines to double
+        content = content.strip()
+        
+        return content
+    
     def _safe_get_nested_value(self, data: Any, path: List[str], default: Any = None) -> Any:
         """
         Safely navigate nested data structures with null safety.
@@ -199,20 +228,20 @@ class OllamaProvider(BaseProvider):
         try:
             logger.info(f"Creating Ollama chat completion with model: {self.config['model']}")
             
-            # Add /nothink command as first system message if enabled
+            # Add /nothink command and response instructions
             use_nothink = self.config.get('use_nothink', True)
             optimized_messages = []
             
             if use_nothink:
                 optimized_messages.append({
                     'role': 'system',
-                    'content': '/nothink'
+                    'content': '/nothink\n\nDo not use <think></think> tags or show your thinking process. Provide direct, clean responses without internal monologue.'
                 })
             
             # Add instruction for complete responses
             optimized_messages.append({
                 'role': 'system',
-                'content': 'Always provide complete, thorough responses. Do not truncate or cut off your answers. If generating code, provide the complete, functional code.'
+                'content': 'Always provide complete, thorough responses. Do not truncate or cut off your answers. If generating code, provide the complete, functional code. Do not use thinking tags like <think> or <thinking>.'
             })
             
             # Optimize messages - remove tools from system messages to reduce context
@@ -288,6 +317,9 @@ class OllamaProvider(BaseProvider):
             
             # Extract message content
             message_content = self._safe_get_nested_value(response_data, ['message', 'content'], "")
+            
+            # Clean up thinking tags and unwanted content
+            message_content = self._clean_response_content(message_content)
             
             # Always simulate tool calls for Ollama since native support is limited
             tool_calls = []
