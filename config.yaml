@@ -1,22 +1,76 @@
-# OpenRouter API settings
+# Provider Configuration
+provider:
+  name: "openrouter"  # Options: "openrouter", "mistralai", "sambanova"
+  # Default model for each provider will be used if not specified
+
+# Provider-specific configurations
 openrouter:
-  api_key: "YOUR KEY"
+  api_key: "API_KEY_HERE"
   base_url: "https://openrouter.ai/api/v1"
   
   # IMPORTANT: When selecting a model, ensure it has a high context window (200k+ tokens recommended)
   # The orchestrator can generate large amounts of results from multiple agents that need to be
   # processed together during synthesis. Low context window models may fail or truncate results.
   model: "moonshotai/kimi-k2"
+  # model: "qwen/qwen3-235b-a22b:free"
+
+mistralai:
+  api_key: "API_KEY_HERE"
+  base_url: "https://api.mistral.ai/v1"
+  model: "mistral-large-latest"
+
+sambanova:
+  api_key: "API_KEY_HERE"
+  base_url: "https://api.sambanova.ai/v1"
+  model: "DeepSeek-V3-0324"
+
+cerebras:
+  api_key: "API_KEY_HERE"
+  model: "llama-4-maverick-17b-128e-instruct"  # Options: llama3.1-8b, llama3.1-70b
+
+ollama:
+  base_url: "http://localhost:11434"  # Default Ollama server URL
+  model: "qwen3:latest"  # Your preferred model (keeping as requested) [model needs to support tools]
+  use_nothink: true  # Send /nothink command to disable thinking process and save resources
+  
+  # Response generation options
+  temperature: 0.7      # Creativity level (0.0-1.0)
+  top_p: 0.9           # Nucleus sampling (0.0-1.0)
+  num_ctx: 26192        # Context window size (increased for longer responses)
+  num_predict: -1      # Max response tokens (-1 = no limit, let model decide when to stop)
+  stop: []             # Custom stop sequences (empty = use model defaults)
+  
+  # Recommended models for speed: phi3:mini, llama3.1:8b, mistral:7b
+  # Large models like qwen3:latest may timeout - use smaller models for better performance
+
+groq:
+  api_key: "API_KEY_HERE"
+  # model: "llama-3.3-70b-versatile"  # Correct Groq model
+  model: "moonshotai/kimi-k2-instruct"
+  temperature: 0.7      # Creativity level (0.0-1.0)
+  max_tokens: null      # Max response tokens (null = no limit)
+  top_p: 1.0           # Nucleus sampling (0.0-1.0)
 
 # System prompt for the agent
 system_prompt: |
-  You are a helpful research assistant. When users ask questions that require 
-  current information or web search, use the search tool and all other tools available to find relevant 
-  information and provide comprehensive answers based on the results.
+  You are an expert AI assistant that EXECUTES tasks, not just plans them. Your job is to:
   
-  IMPORTANT: When you have fully satisfied the user's request and provided a complete answer, 
-  you MUST call the mark_task_complete tool with a summary of what was accomplished and 
-  a final message for the user. This signals that the task is finished.
+  1. ACTUALLY DO what the user asks - don't just describe or plan
+  2. If asked to create code, write the COMPLETE, FUNCTIONAL code
+  3. If asked to create content, provide the FULL, FINISHED content
+  4. Use tools when needed to gather information or perform calculations
+  5. Provide CONCRETE, ACTIONABLE results
+  
+  CRITICAL: Do NOT create plans, outlines, or descriptions. DO THE ACTUAL WORK.
+  
+  Examples:
+  - "Create HTML game" → Write the complete HTML/CSS/JavaScript code
+  - "Write a story" → Write the actual full story
+  - "Calculate something" → Use calculator tool and provide the answer
+  - "Research topic" → Use search tool and provide comprehensive findings
+  
+  IMPORTANT: When you have COMPLETED the actual task (not planned it), call mark_task_complete 
+  with the finished work as your completion message.
 
 # Agent settings
 agent:
@@ -25,35 +79,56 @@ agent:
 # Orchestrator settings
 orchestrator:
   parallel_agents: 4  # Number of agents to run in parallel
-  task_timeout: 300   # Timeout in seconds per agent
+  task_timeout: 1000   # Timeout in seconds per agent (increased for local models)
   aggregation_strategy: "consensus"  # How to combine results
   
   # Question generation prompt for orchestrator
   question_generation_prompt: |
-    You are an orchestrator that needs to create {num_agents} different questions to thoroughly analyze this topic from multiple angles.
+    You are an orchestrator that breaks down user requests into {num_agents} ACTIONABLE TASKS that agents will EXECUTE.
     
     Original user query: {user_input}
     
-    Generate exactly {num_agents} different, specific questions that will help gather comprehensive information about this topic.
-    Each question should approach the topic from a different angle (research, analysis, verification, alternatives, etc.).
+    CRITICAL: Create {num_agents} different EXECUTION TASKS, not research questions. Each task should:
+    1. Be something an agent can ACTUALLY DO and COMPLETE
+    2. Contribute to fulfilling the user's request
+    3. Be specific and actionable
+    4. Focus on CREATING/BUILDING/DOING, not analyzing
     
-    Return your response as a JSON array of strings, like this:
-    ["question 1", "question 2", "question 3", "question 4"]
+    For code requests: Break into implementation tasks
+    For creative requests: Break into creation tasks  
+    For research requests: Break into specific information gathering tasks
+    
+    Example for "create HTML minesweeper game":
+    ["Create the HTML structure and basic styling for the minesweeper game",
+     "Implement the JavaScript game logic for mine placement and cell revealing", 
+     "Add the user interface controls and game state management",
+     "Implement win/loss detection and game restart functionality"]
+    
+    Return your response as a JSON array of {num_agents} actionable tasks:
+    ["task 1", "task 2", "task 3", "task 4"]
     
     Only return the JSON array, nothing else.
 
   # Synthesis prompt for combining all agent responses
   synthesis_prompt: |
-    You have {num_responses} different AI agents that analyzed the same query from different perspectives. 
-    Your job is to synthesize their responses into ONE comprehensive final answer.
+    You have {num_responses} different AI agents that EXECUTED different parts of the same task. 
+    Your job is to combine their ACTUAL WORK into ONE complete, functional final result.
     
-    Here are all the agent responses:
+    Here are all the agent outputs:
     
     {agent_responses}
     
-    IMPORTANT: Just synthesize these into ONE final comprehensive answer that combines the best information from all agents. 
-    Do NOT call mark_task_complete or any other tools. Do NOT mention that you are synthesizing multiple responses. 
-    Simply provide the final synthesized answer directly as your response.
+    CRITICAL INSTRUCTIONS:
+    1. COMBINE the actual work/code/content from all agents
+    2. If it's code, merge it into ONE complete, functional file
+    3. If it's content, combine into ONE coherent piece
+    4. Fill any gaps between the agent outputs
+    5. Ensure the final result is COMPLETE and FUNCTIONAL
+    6. Do NOT just describe what the agents did - PROVIDE THE FINAL WORKING RESULT
+    
+    Do NOT call mark_task_complete or any other tools. 
+    Do NOT mention agents or synthesis process.
+    Simply provide the complete, functional final result directly.
 
 # Search tool settings
 search:

@@ -1,5 +1,8 @@
-openai
-requests
-beautifulsoup4
-pyyaml
-ddgs
+openai>=1.0.0
+duckduckgo-search>=6.0.0
+pyyaml>=6.0
+colorama>=0.4.6
+mistralai>=0.4.0
+cerebras_cloud_sdk>=1.0.0
+requests>=2.25.0
+groq>=0.4.0

@@ -1,6 +1,29 @@
-# 🚀 Make It heavy
+# 🚀 Make It Heavy - Advanced Edition
 
-A Python framework to emulate **Grok heavy** functionality using a powerful multi-agent system. Built on OpenRouter's API, Make It heavy delivers comprehensive, multi-perspective analysis through intelligent agent orchestration.
+> **🙏 Acknowledgment**: This is an advanced, supercharged version of the original brilliant concept by [Doriandarko](https://github.com/Doriandarko). All credit for the foundational idea and initial implementation goes to the mad genius himself. This version just takes it to the next level with 6 AI providers, enhanced orchestration, and production-ready features.
+
+## 💎 Support This Crazy Work
+
+If you're loving this advanced multi-agent madness and want to see more insane AI experiments, consider supporting the development! Your support fuels more cutting-edge AI tools and keeps the innovation flowing.
+
+**🚀 Crypto Donations (Preferred)**:
+- **Bitcoin (BTC)**: `bc1qfxxnzapmjkewsuvg88lh9cutr0culq8a2djuyw`
+- **Ethereum (ETH)**: `0xD46028573f52692727aB195CCC4aaF6e5bDD6D98`
+- **Solana (SOL)**: `HiJeHzBUNoEXV4fCYuLTfHWKDEfJErL7wV3Z8jjicBWD`
+- **BNB**: `0xD46028573f52692727aB195CCC4aaF6e5bDD6D98`
+- **Toncoin (TON)**: `UQBpBtlb_lXeSwsyj3zHKUhW7nfoBTcvvDkfAouV3xIyhYVU`
+
+**🌟 Other Ways to Support**:
+- **Ko-fi**: `https://ko-fi.com/aiophos`
+
+
+*Every donation, no matter how small, helps push the boundaries of what's possible with AI! 🔥*
+
+---
+
+## 🌟 What Makes This Heavy?
+
+A Python framework to emulate **Grok heavy** functionality using a powerful multi-agent system. Built with 6 different AI providers, Make It Heavy delivers comprehensive, multi-perspective analysis through intelligent agent orchestration.
 
 ## 🌟 Features
 
@@ -18,7 +41,7 @@ A Python framework to emulate **Grok heavy** functionality using a powerful mult
 
 - Python 3.8+
 - [uv](https://github.com/astral-sh/uv) (recommended Python package manager)
-- OpenRouter API key
+- AI Provider API key (OpenRouter, Cerebras, SambaNova) OR local Ollama setup
 
 ### Installation
 
@@ -39,9 +62,19 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 uv pip install -r requirements.txt
 ```
 
-3. **Configure API key:**
+3. **Configure AI Provider:**
+
+**Option A - Cloud Providers (OpenRouter/Cerebras/SambaNova):**
 ```bash
-# Edit config.yaml and replace YOUR API KEY HERE with your OpenRouter API key
+# Edit config.yaml and set your API key for chosen provider
+```
+
+**Option B - Local Ollama:**
+```bash
+# Install Ollama from https://ollama.ai/
+ollama serve
+ollama pull llama3.1:8b
+# No API key needed!
 ```
 
 ## 🎯 Usage
@@ -213,16 +246,36 @@ class MyCustomTool(BaseTool):
 
 4. The tool will be automatically discovered and loaded!
 
-### Customizing Models
+### Multiple AI Providers
 
-Supports any OpenRouter-compatible model:
+Make It Heavy supports 6 different AI providers:
 
 ```yaml
+# Cloud Providers
 openrouter:
   model: "anthropic/claude-3.5-sonnet"     # For complex reasoning
   model: "openai/gpt-4.1-mini"             # For cost efficiency  
-  model: "google/gemini-2.0-flash-001"     # For speed
-  model: "meta-llama/llama-3.1-70b"        # For open source
+
+sambanova:
+  model: "DeepSeek-V3-0324"                # For cost-effective inference
+
+cerebras:
+  model: "llama3.1-70b"                    # For ultra-fast inference
+
+groq:
+  model: "llama-3.3-70b-versatile"         # For lightning-fast inference
+
+# Local Provider
+ollama:
+  model: "llama3.1:8b"                     # For private, local inference
+```
+
+**Provider Selection**:
+```bash
+python make_it_heavy.py --provider groq        # Lightning-fast inference
+python make_it_heavy.py --provider cerebras    # Ultra-fast cloud
+python make_it_heavy.py --provider ollama      # Private local
+python make_it_heavy.py --provider sambanova   # Cost-effective
 ```
 
 ### Adjusting Agent Count
@@ -347,9 +400,43 @@ See [LICENSE](LICENSE) file for full details.
 **Ready to make it heavy?** 🚀
 
 ```bash
-uv run make_it_heavy.py
+python make_it_heavy.py --provider groq  # Lightning fast
+python make_it_heavy.py --provider ollama # Private & local
+python make_it_heavy.py --provider cerebras # Ultra-fast cloud
 ```
+
+## 🔥 Love This Project?
+
+If Make It Heavy has blown your mind and you want to see more insane AI innovations, **your support makes all the difference**! 
+
+**Why support?**
+- 🚀 **Faster development** of new AI tools
+- 🧪 **More experimental features** and providers
+- 🔧 **Better documentation** and tutorials
+- 💡 **Crazy new ideas** brought to life
+- 🌟 **Community-driven features**
+
+**Every contribution helps push the boundaries of AI tooling!**
+
+### 💎 Quick Crypto Support
+- **BTC**: `[Your BTC Address]`
+- **ETH**: `[Your ETH Address]`
+- **USDT**: `[Your USDT Address]`
+
+*Building the future of AI, one agent at a time* ⚡
+
+## 🙏 Credits
+
+- **Original Concept**: [Doriandarko](https://github.com/Doriandarko) - The visionary behind the initial Make It Heavy
+- **Advanced Implementation**: Enhanced with 6 providers, improved orchestration, and production features
+- **Community**: Everyone who contributes, tests, and provides feedback
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date)](https://www.star-history.com/#Doriandarko/make-it-heavy&Date)
+<a href="https://www.star-history.com/#Doriandarko/make-it-heavy&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date" />
+ </picture>
+</a>

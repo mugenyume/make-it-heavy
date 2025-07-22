@@ -4,10 +4,10 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
-from agent import OpenRouterAgent
+from agent import AIAgent
 
 class TaskOrchestrator:
-    def __init__(self, config_path="config.yaml", silent=False):
+    def __init__(self, config_path="config.yaml", provider_name=None, silent=False):
         # Load configuration
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
@@ -16,6 +16,19 @@ class TaskOrchestrator:
         self.task_timeout = self.config['orchestrator']['task_timeout']
         self.aggregation_strategy = self.config['orchestrator']['aggregation_strategy']
         self.silent = silent
+        self.provider_name = provider_name
+        
+        # Initialize provider using factory
+        if provider_name is None:
+            provider_name = self.config.get('provider', {}).get('name', 'openrouter')
+        
+        # Get provider-specific configuration
+        provider_config = self.config.get(provider_name, {})
+        if not provider_config:
+            raise ValueError(f"No configuration found for provider: {provider_name}")
+        
+        from providers import ProviderFactory
+        self.provider = ProviderFactory.create_provider(provider_name, provider_config)
         
         # Track agent progress
         self.agent_progress = {}
@@ -26,7 +39,7 @@ class TaskOrchestrator:
         """Use AI to dynamically generate different questions based on user input"""
         
         # Create question generation agent
-        question_agent = OpenRouterAgent(silent=True)
+        question_agent = AIAgent(silent=True, provider_name=self.provider_name)
         
         # Get question generation prompt from config
         prompt_template = self.config['orchestrator']['question_generation_prompt']
@@ -76,8 +89,8 @@ class TaskOrchestrator:
         try:
             self.update_agent_progress(agent_id, "PROCESSING...")
             
-            # Use simple agent like in main.py
-            agent = OpenRouterAgent(silent=True)
+            # Use AIAgent with specified provider
+            agent = AIAgent(silent=True, provider_name=self.provider_name)
             
             start_time = time.time()
             response = agent.run(subtask)
@@ -106,13 +119,39 @@ class TaskOrchestrator:
         Combine results from all agents into a comprehensive final answer.
         Uses the configured aggregation strategy.
         """
-        successful_results = [r for r in agent_results if r["status"] == "success"]
+        # LESS AGGRESSIVE FILTERING - Accept more responses as valid
+        successful_results = []
+        for r in agent_results:
+            if r["status"] == "success" and r.get("response"):
+                response = str(r["response"]).strip()
+                # Only filter out obvious errors and completely empty responses
+                if response and not response.startswith("Error:") and len(response) > 10:
+                    successful_results.append(r)
         
         if not successful_results:
-            return "All agents failed to provide results. Please try again."
+            # Check if any agents provided any response at all (even short ones)
+            fallback_results = []
+            for r in agent_results:
+                if r["status"] == "success" and r.get("response"):
+                    response = str(r["response"]).strip()
+                    if response and not response.startswith("Error:"):
+                        fallback_results.append(r)
+            
+            if fallback_results:
+                # Use fallback results if we have any non-error responses
+                successful_results = fallback_results
+            else:
+                return "All agents failed to provide meaningful results. Please try again with a different question."
         
         # Extract responses for aggregation
-        responses = [r["response"] for r in successful_results]
+        responses = []
+        for r in successful_results:
+            response = str(r["response"]).strip()
+            if response:
+                responses.append(response)
+        
+        if not responses:
+            return "The agents processed the request but did not provide meaningful responses."
         
         if self.aggregation_strategy == "consensus":
             return self._aggregate_consensus(responses, successful_results)
@@ -124,21 +163,27 @@ class TaskOrchestrator:
         """
         Use one final AI call to synthesize all agent responses into a coherent answer.
         """
-        if len(responses) == 1:
-            return responses[0]
+        # Filter out empty responses
+        valid_responses = [r.strip() for r in responses if r and r.strip()]
+        
+        if not valid_responses:
+            return "The agents processed the request but did not provide meaningful responses."
+        
+        if len(valid_responses) == 1:
+            return valid_responses[0]
         
         # Create synthesis agent to combine all responses
-        synthesis_agent = OpenRouterAgent(silent=True)
+        synthesis_agent = AIAgent(silent=True, provider_name=self.provider_name)
         
         # Build agent responses section
         agent_responses_text = ""
-        for i, response in enumerate(responses, 1):
+        for i, response in enumerate(valid_responses, 1):
             agent_responses_text += f"=== AGENT {i} RESPONSE ===\n{response}\n\n"
         
         # Get synthesis prompt from config and format it
         synthesis_prompt_template = self.config['orchestrator']['synthesis_prompt']
         synthesis_prompt = synthesis_prompt_template.format(
-            num_responses=len(responses),
+            num_responses=len(valid_responses),
             agent_responses=agent_responses_text
         )
         
@@ -149,18 +194,27 @@ class TaskOrchestrator:
         # Get the synthesized response
         try:
             final_answer = synthesis_agent.run(synthesis_prompt)
-            return final_answer
+            if final_answer and final_answer.strip():
+                return final_answer.strip()
+            else:
+                # If synthesis returns empty, fallback to concatenation
+                combined = []
+                for i, response in enumerate(valid_responses, 1):
+                    combined.append(f"=== Agent {i} Response ===")
+                    combined.append(response)
+                    combined.append("")
+                return "\n".join(combined).strip()
         except Exception as e:
             # Log the error for debugging
             print(f"\n🚨 SYNTHESIS FAILED: {str(e)}")
             print("📋 Falling back to concatenated responses\n")
             # Fallback: if synthesis fails, concatenate responses
             combined = []
-            for i, response in enumerate(responses, 1):
+            for i, response in enumerate(valid_responses, 1):
                 combined.append(f"=== Agent {i} Response ===")
                 combined.append(response)
                 combined.append("")
-            return "\n".join(combined)
+            return "\n".join(combined).strip()
     
     def get_progress_status(self) -> Dict[int, str]:
         """Get current progress status for all agents"""

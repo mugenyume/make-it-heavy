@@ -1,28 +1,28 @@
 import time
 import threading
 import sys
+import argparse
 from orchestrator import TaskOrchestrator
+from providers import ProviderFactory
 
 class OrchestratorCLI:
-    def __init__(self):
-        self.orchestrator = TaskOrchestrator()
+    def __init__(self, provider_name=None):
+        self.orchestrator = TaskOrchestrator(provider_name=provider_name)
         self.start_time = None
         self.running = False
         
-        # Extract model name for display
-        model_full = self.orchestrator.config['openrouter']['model']
-        # Extract model name (e.g., "google/gemini-2.5-flash-preview-05-20" -> "GEMINI-2.5-FLASH")
-        if '/' in model_full:
-            model_name = model_full.split('/')[-1]
-        else:
-            model_name = model_full
+        # Get provider info for display
+        provider_info = self.orchestrator.provider.get_provider_info()
+        model_name = provider_info['model']
         
         # Clean up model name for display
-        model_parts = model_name.split('-')
-        # Take first 3 parts for cleaner display (e.g., gemini-2.5-flash)
-        clean_name = '-'.join(model_parts[:3]) if len(model_parts) >= 3 else model_name
-        self.model_display = clean_name.upper() + " HEAVY"
+        if '/' in model_name:
+            model_name = model_name.split('/')[-1]
         
+        model_parts = model_name.split('-')
+        clean_name = '-'.join(model_parts[:3]) if len(model_parts) >= 3 else model_name
+        self.model_display = f"{provider_info['display_name']} - {clean_name.upper()} HEAVY"
+    
     def clear_screen(self):
         """Properly clear the entire screen"""
         import os
@@ -46,22 +46,24 @@ class OrchestratorCLI:
         # ANSI color codes
         ORANGE = '\033[38;5;208m'  # Orange color
         RED = '\033[91m'           # Red color
+        GREEN = '\033[92m'         # Green color
         RESET = '\033[0m'          # Reset color
         
+        # Use ASCII-safe characters for Windows compatibility
         if status == "QUEUED":
-            return "○ " + "·" * 70
+            return "O " + "." * 70
         elif status == "INITIALIZING...":
-            return f"{ORANGE}◐{RESET} " + "·" * 70
+            return f"{ORANGE}*{RESET} " + "." * 70
         elif status == "PROCESSING...":
             # Animated processing bar in orange
-            dots = f"{ORANGE}:" * 10 + f"{RESET}" + "·" * 60
-            return f"{ORANGE}●{RESET} " + dots
+            dots = f"{ORANGE}:" * 10 + f"{RESET}" + "." * 60
+            return f"{ORANGE}*{RESET} " + dots
         elif status == "COMPLETED":
-            return f"{ORANGE}●{RESET} " + f"{ORANGE}:" * 70 + f"{RESET}"
-        elif status.startswith("FAILED"):
-            return f"{RED}✗{RESET} " + f"{RED}×" * 70 + f"{RESET}"
+            return f"{GREEN}*{RESET} " + f"{GREEN}:" * 70 + f"{RESET}"
+        elif "error" in status.lower() or "failed" in status.lower():
+            return f"{RED}X{RESET} " + f"{RED}x" * 70 + f"{RESET}"
         else:
-            return f"{ORANGE}◐{RESET} " + "·" * 70
+            return f"{ORANGE}*{RESET} " + "." * 70
     
     def update_display(self):
         """Update the console display with current status"""
@@ -81,9 +83,9 @@ class OrchestratorCLI:
         # Header with dynamic model name
         print(self.model_display)
         if self.running:
-            print(f"● RUNNING • {time_str}")
+            print(f"* RUNNING * {time_str}")
         else:
-            print(f"● COMPLETED • {time_str}")
+            print(f"* COMPLETED * {time_str}")
         print()
         
         # Agent status lines
@@ -99,7 +101,7 @@ class OrchestratorCLI:
         """Monitor and update progress display in separate thread"""
         while self.running:
             self.update_display()
-            time.sleep(1.0)  # Update every 1 second (reduced flicker)
+            time.sleep(0.5)  # Update every 0.5 seconds for more responsiveness
     
     def run_task(self, user_input):
         """Run orchestrator task with live progress display"""
@@ -139,21 +141,23 @@ class OrchestratorCLI:
     
     def interactive_mode(self):
         """Run interactive CLI session"""
+        provider_info = self.orchestrator.provider.get_provider_info()
+        
         print("Multi-Agent Orchestrator")
+        print(f"Provider: {provider_info['display_name']}")
+        print(f"Model: {provider_info['model']}")
         print(f"Configured for {self.orchestrator.num_agents} parallel agents")
         print("Type 'quit', 'exit', or 'bye' to exit")
         print("-" * 50)
         
         try:
-            orchestrator_config = self.orchestrator.config['openrouter']
-            print(f"Using model: {orchestrator_config['model']}")
             print("Orchestrator initialized successfully!")
-            print("Note: Make sure to set your OpenRouter API key in config.yaml")
+            print("Note: Make sure to set your API keys in config.yaml")
             print("-" * 50)
         except Exception as e:
             print(f"Error initializing orchestrator: {e}")
             print("Make sure you have:")
-            print("1. Set your OpenRouter API key in config.yaml")
+            print("1. Set your API keys in config.yaml for the selected provider")
             print("2. Installed all dependencies with: pip install -r requirements.txt")
             return
         
@@ -187,8 +191,39 @@ class OrchestratorCLI:
 
 def main():
     """Main entry point for the orchestrator CLI"""
-    cli = OrchestratorCLI()
-    cli.interactive_mode()
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Multi-agent orchestrator with provider selection')
+    parser.add_argument('--provider', choices=ProviderFactory.get_available_providers(),
+                        help='AI provider to use (overrides config.yaml)')
+    parser.add_argument('--list-providers', action='store_true',
+                        help='List available providers and exit')
+    
+    args = parser.parse_args()
+    
+    # List providers if requested
+    if args.list_providers:
+        print("Available AI Providers:")
+        print("-" * 30)
+        for provider_name in ProviderFactory.get_available_providers():
+            info = ProviderFactory.get_provider_info(provider_name)
+            print(f"• {info['display_name']} ({provider_name})")
+            print(f"  Description: {info['description']}")
+            print(f"  Default model: {info['default_model']}")
+            print()
+        return
+    
+    try:
+        # Initialize CLI with optional provider override
+        cli = OrchestratorCLI(provider_name=args.provider)
+        cli.interactive_mode()
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        print("\nMake sure you have:")
+        print("1. Set your API keys in config.yaml for the selected provider")
+        print("2. Installed all dependencies with: pip install -r requirements.txt")
+        print("\nTo see available providers, run: python make_it_heavy.py --list-providers")
 
 if __name__ == "__main__":
     main()

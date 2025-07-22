@@ -1,22 +1,50 @@
-from agent import OpenRouterAgent
+import argparse
+import sys
+from agent import AIAgent
+from providers import ProviderFactory
 
 def main():
-    """Main entry point for the OpenRouter agent"""
-    print("OpenRouter Agent with DuckDuckGo Search")
-    print("Type 'quit', 'exit', or 'bye' to exit")
-    print("-" * 50)
+    """Main entry point for the AI agent with provider selection"""
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='AI Agent with multi-provider support')
+    parser.add_argument('--provider', choices=ProviderFactory.get_available_providers(),
+                        help='AI provider to use (overrides config.yaml)')
+    parser.add_argument('--list-providers', action='store_true',
+                        help='List available providers and exit')
+    
+    args = parser.parse_args()
+    
+    # List providers if requested
+    if args.list_providers:
+        print("Available AI Providers:")
+        print("-" * 30)
+        for provider_name in ProviderFactory.get_available_providers():
+            info = ProviderFactory.get_provider_info(provider_name)
+            print(f"• {info['display_name']} ({provider_name})")
+            print(f"  Description: {info['description']}")
+            print(f"  Default model: {info['default_model']}")
+            print()
+        return
     
     try:
-        agent = OpenRouterAgent()
-        print("Agent initialized successfully!")
-        print(f"Using model: {agent.config['openrouter']['model']}")
-        print("Note: Make sure to set your OpenRouter API key in config.yaml")
+        # Initialize agent with optional provider override
+        agent = AIAgent(provider_name=args.provider)
+        
+        provider_info = agent.provider_info
+        print("Multi-Provider AI Agent")
         print("-" * 50)
+        print(f"Provider: {provider_info['display_name']}")
+        print(f"Model: {provider_info['model']}")
+        print("Type 'quit', 'exit', or 'bye' to exit")
+        print("-" * 50)
+        
     except Exception as e:
         print(f"Error initializing agent: {e}")
-        print("Make sure you have:")
-        print("1. Set your OpenRouter API key in config.yaml")
+        print("\nMake sure you have:")
+        print("1. Set your API keys in config.yaml for the selected provider")
         print("2. Installed all dependencies with: pip install -r requirements.txt")
+        print("\nTo see available providers, run: python main.py --list-providers")
         return
     
     while True:
