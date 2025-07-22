@@ -405,37 +405,6 @@ python make_it_heavy.py --provider ollama # Private & local
 python make_it_heavy.py --provider cerebras # Ultra-fast cloud
 ```
 
-## 🔥 Love This Project?
-
-If Make It Heavy has blown your mind and you want to see more insane AI innovations, **your support makes all the difference**! 
-
-**Why support?**
-- 🚀 **Faster development** of new AI tools
-- 🧪 **More experimental features** and providers
-- 🔧 **Better documentation** and tutorials
-- 💡 **Crazy new ideas** brought to life
-- 🌟 **Community-driven features**
-
-**Every contribution helps push the boundaries of AI tooling!**
-
-### 💎 Quick Crypto Support
-- **BTC**: `[Your BTC Address]`
-- **ETH**: `[Your ETH Address]`
-- **USDT**: `[Your USDT Address]`
-
-*Building the future of AI, one agent at a time* ⚡
-
-## 🙏 Credits
-
-- **Original Concept**: [Doriandarko](https://github.com/Doriandarko) - The visionary behind the initial Make It Heavy
-- **Advanced Implementation**: Enhanced with 6 providers, improved orchestration, and production features
-- **Community**: Everyone who contributes, tests, and provides feedback
-
-## Star History
-
-<a href="https://www.star-history.com/#Doriandarko/make-it-heavy&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date&theme=dark" />
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date" />
    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date" />
  </picture>
