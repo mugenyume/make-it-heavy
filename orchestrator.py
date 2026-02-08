@@ -34,6 +34,53 @@ class TaskOrchestrator:
         self.agent_progress = {}
         self.agent_results = {}
         self.progress_lock = threading.Lock()
+
+    def _build_fallback_subtasks(self, user_input: str, num_agents: int) -> List[str]:
+        """Create deterministic fallback research questions for any agent count."""
+        templates = [
+            "What are the most important background facts about {user_input}?",
+            "What are the key insights and implications related to {user_input}?",
+            "What alternative perspectives or counterarguments exist about {user_input}?",
+            "Which claims about {user_input} should be verified and what evidence supports them?",
+            "What practical takeaways or recommendations can be derived from {user_input}?",
+            "What risks, limitations, or uncertainties are associated with {user_input}?"
+        ]
+
+        questions = []
+        for index in range(num_agents):
+            template = templates[index % len(templates)]
+            if index >= len(templates):
+                template = template.replace("?", f" (alternative angle {index + 1})?")
+            questions.append(template.format(user_input=user_input))
+
+        return questions
+
+    def _normalize_generated_subtasks(
+        self,
+        generated: Any,
+        user_input: str,
+        num_agents: int
+    ) -> List[str]:
+        """Coerce generated subtasks into a clean list with the exact desired count."""
+        if not isinstance(generated, list):
+            return self._build_fallback_subtasks(user_input, num_agents)
+
+        normalized = []
+        for item in generated:
+            task_text = str(item).strip()
+            if task_text:
+                normalized.append(task_text)
+            if len(normalized) >= num_agents:
+                return normalized[:num_agents]
+
+        if len(normalized) < num_agents:
+            fallback = self._build_fallback_subtasks(user_input, num_agents)
+            for fallback_task in fallback:
+                if len(normalized) >= num_agents:
+                    break
+                normalized.append(fallback_task)
+
+        return normalized[:num_agents]
     
     def decompose_task(self, user_input: str, num_agents: int) -> List[str]:
         """Use AI to dynamically generate different questions based on user input"""
@@ -48,9 +95,15 @@ class TaskOrchestrator:
             num_agents=num_agents
         )
         
-        # Remove task completion tool to avoid issues
-        question_agent.tools = [tool for tool in question_agent.tools if tool.get('function', {}).get('name') != 'mark_task_complete']
-        question_agent.tool_mapping = {name: func for name, func in question_agent.tool_mapping.items() if name != 'mark_task_complete'}
+        # Keep original behavior: only disable completion signaling for this stage.
+        question_agent.tools = [
+            tool for tool in question_agent.tools
+            if tool.get('function', {}).get('name') != 'mark_task_complete'
+        ]
+        question_agent.tool_mapping = {
+            name: func for name, func in question_agent.tool_mapping.items()
+            if name != 'mark_task_complete'
+        }
         
         try:
             # Get AI-generated questions
@@ -67,20 +120,11 @@ class TaskOrchestrator:
                     raise
                 questions = json.loads(cleaned_response[start:end + 1])
             
-            # Validate we got the right number of questions
-            if not isinstance(questions, list) or len(questions) != num_agents:
-                raise ValueError(f"Expected {num_agents} questions, got {len(questions)}")
-            
-            return [str(question) for question in questions]
+            return self._normalize_generated_subtasks(questions, user_input, num_agents)
             
         except Exception:
             # Fallback: create simple variations if AI fails
-            return [
-                f"Research comprehensive information about: {user_input}",
-                f"Analyze and provide insights about: {user_input}",
-                f"Find alternative perspectives on: {user_input}",
-                f"Verify and cross-check facts about: {user_input}"
-            ][:num_agents]
+            return self._build_fallback_subtasks(user_input, num_agents)
     
     def update_agent_progress(self, agent_id: int, status: str, result: str = None):
         """Thread-safe progress tracking"""

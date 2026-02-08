@@ -50,34 +50,40 @@ ollama:
 groq:
   api_key: "API_KEY_HERE"
   model: "llama-3.3-70b-versatile"
-  temperature: 0.7      # Creativity level (0.0-1.0)
-  max_tokens: null      # Max response tokens (null = no limit)
-  top_p: 1.0           # Nucleus sampling (0.0-1.0)
+  temperature: 0.8      # Creativity level (0.0-1.0)
+  max_tokens: 8192      # Increased for better responses
+  top_p: 1.0            # Nucleus sampling (0.0-1.0)
 
 # System prompt for the agent
 system_prompt: |
-  You are an expert AI assistant that EXECUTES tasks, not just plans them. Your job is to:
+  You are a helpful research assistant. Your goal is to provide deep, comprehensive answers.
+  When users ask for information that may require up-to-date facts, use available tools
+  (especially web search) to gather evidence, cross-check claims, and produce a high-quality
+  synthesized response.
   
-  1. ACTUALLY DO what the user asks - don't just describe or plan
-  2. If asked to create code, write the COMPLETE, FUNCTIONAL code
-  3. If asked to create content, provide the FULL, FINISHED content
-  4. Use tools when needed to gather information or perform calculations
-  5. Provide CONCRETE, ACTIONABLE results
+  IMPORTANT TOOL CALLING RULES:
+  - When using tools, ONLY use the structured function calling interface
+  - NEVER write tool calls as text like <function=name{}> - this will cause errors
+  - Always use the proper tool calling mechanism provided by the system
   
-  CRITICAL: Do NOT create plans, outlines, or descriptions. DO THE ACTUAL WORK.
-  
-  Examples:
-  - "Create HTML game" → Write the complete HTML/CSS/JavaScript code
-  - "Write a story" → Write the actual full story
-  - "Calculate something" → Use calculator tool and provide the answer
-  - "Research topic" → Use search tool and provide comprehensive findings
-  
-  IMPORTANT: When you have COMPLETED the actual task (not planned it), call mark_task_complete 
-  with the finished work as your completion message.
+  WORKFLOW:
+  1. Understand the user's request and determine what must be researched
+  2. Use tools as needed to gather and validate information
+  3. Provide a comprehensive response grounded in gathered evidence
+  4. ONLY call mark_task_complete when the user's request has been fully satisfied
+     and your answer is complete
+
+  STYLE:
+  - Avoid repeating the same point multiple times
+  - Keep the final answer structured and concise
+  - If uncertainty exists, explicitly mention it
+
+  IMPORTANT: Do not call mark_task_complete early. Use it only when you are truly done.
 
 # Agent settings
 agent:
   max_iterations: 10
+  finalize_after_no_tool_streak: 2
 
 # Orchestrator settings
 orchestrator:
@@ -87,51 +93,42 @@ orchestrator:
   
   # Question generation prompt for orchestrator
   question_generation_prompt: |
-    You are an orchestrator that breaks down user requests into {num_agents} ACTIONABLE TASKS that agents will EXECUTE.
+    You are an orchestrator that needs to create {num_agents} different questions
+    to analyze a user topic from multiple angles.
     
     Original user query: {user_input}
     
-    CRITICAL: Create {num_agents} different EXECUTION TASKS, not research questions. Each task should:
-    1. Be something an agent can ACTUALLY DO and COMPLETE
-    2. Contribute to fulfilling the user's request
-    3. Be specific and actionable
-    4. Focus on CREATING/BUILDING/DOING, not analyzing
-    
-    For code requests: Break into implementation tasks
-    For creative requests: Break into creation tasks  
-    For research requests: Break into specific information gathering tasks
-    
-    Example for "create HTML minesweeper game":
-    ["Create the HTML structure and basic styling for the minesweeper game",
-     "Implement the JavaScript game logic for mine placement and cell revealing", 
-     "Add the user interface controls and game state management",
-     "Implement win/loss detection and game restart functionality"]
-    
-    Return your response as a JSON array of {num_agents} actionable tasks:
-    ["task 1", "task 2", "task 3", "task 4"]
+    Generate exactly {num_agents} specific research questions that cover different perspectives,
+    such as background, analysis, alternatives, and verification.
+
+    Each question should:
+    1. Be specific and answerable
+    2. Approach the topic from a different angle
+    3. Help produce a comprehensive final answer
+
+    Return your response as a JSON array of strings, like:
+    ["question 1", "question 2", "question 3", "question 4"]
     
     Only return the JSON array, nothing else.
 
   # Synthesis prompt for combining all agent responses
   synthesis_prompt: |
-    You have {num_responses} different AI agents that EXECUTED different parts of the same task. 
-    Your job is to combine their ACTUAL WORK into ONE complete, functional final result.
+    You have {num_responses} different AI agents that analyzed the same user query
+    from different perspectives.
+    Your job is to synthesize their responses into one comprehensive final answer.
     
-    Here are all the agent outputs:
+    Here are the agent responses:
     
     {agent_responses}
     
-    CRITICAL INSTRUCTIONS:
-    1. COMBINE the actual work/code/content from all agents
-    2. If it's code, merge it into ONE complete, functional file
-    3. If it's content, combine into ONE coherent piece
-    4. Fill any gaps between the agent outputs
-    5. Ensure the final result is COMPLETE and FUNCTIONAL
-    6. Do NOT just describe what the agents did - PROVIDE THE FINAL WORKING RESULT
-    
-    Do NOT call mark_task_complete or any other tools. 
-    Do NOT mention agents or synthesis process.
-    Simply provide the complete, functional final result directly.
+    Produce a final answer that:
+    1. Merges the strongest points from all responses
+    2. Resolves conflicts where possible
+    3. Is clear, structured, and directly useful to the user
+
+    Do NOT call mark_task_complete or any tools.
+    Do NOT mention the synthesis process or individual agents.
+    Just provide the final synthesized answer directly.
 
 # Search tool settings
 search:

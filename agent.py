@@ -1,5 +1,6 @@
 import json
 import yaml
+from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional
 from providers import ProviderFactory
 from tools import discover_tools
@@ -112,16 +113,55 @@ class AIAgent:
 
         raise ValueError("Unsupported tool arguments format")
 
-    def call_llm(self, messages):
-        """Make API call to the configured provider with tools"""
+    def _finalize_response_content(self, content_blocks: List[str]) -> str:
+        """Deduplicate highly similar blocks and return a clean final response."""
+        if not content_blocks:
+            return ""
+
+        deduplicated_blocks: List[str] = []
+        normalized_blocks: List[str] = []
+
+        for block in content_blocks:
+            stripped = block.strip()
+            if not stripped:
+                continue
+
+            normalized = " ".join(stripped.lower().split())
+            is_duplicate = False
+
+            for existing_normalized in normalized_blocks:
+                if normalized == existing_normalized:
+                    is_duplicate = True
+                    break
+
+                if len(normalized) >= 100 and len(existing_normalized) >= 100:
+                    similarity = SequenceMatcher(None, normalized, existing_normalized).ratio()
+                    if similarity >= 0.94:
+                        is_duplicate = True
+                        break
+
+            if not is_duplicate:
+                deduplicated_blocks.append(stripped)
+                normalized_blocks.append(normalized)
+
+        return "\n\n".join(deduplicated_blocks)
+
+    def call_llm(self, messages, include_tools: bool = True):
+        """Make API call to the configured provider, optionally with tools."""
         try:
             response = self.provider.create_chat_completion(
                 messages=messages,
-                tools=self.tools if self.tools else None
+                tools=self.tools if include_tools and self.tools else None
             )
             return response
+        except ImportError as e:
+            raise Exception(f"Provider dependency missing: {str(e)}. Install required packages.")
+        except ValueError as e:
+            raise Exception(f"Invalid request: {str(e)}")
         except Exception as e:
-            raise Exception(f"LLM call failed: {str(e)}")
+            error_type = type(e).__name__
+            error_msg = str(e)
+            raise Exception(f"LLM call failed ({error_type}): {error_msg}")
     
     def handle_tool_call(self, tool_call):
         """Handle a tool call and return the result message"""
@@ -180,7 +220,13 @@ class AIAgent:
         ]
         
         # Track all assistant responses for full content capture
-        full_response_content = []
+        full_response_content: List[str] = []
+        non_completion_tool_calls = 0
+        no_tool_streak = 0
+        completion_message_fallback: Optional[str] = None
+        finalize_after_no_tool_streak = int(
+            self.config.get('agent', {}).get('finalize_after_no_tool_streak', 2)
+        )
         
         # Implement agentic loop
         max_iterations = self.config.get('agent', {}).get('max_iterations', 10)
@@ -227,10 +273,10 @@ class AIAgent:
             
             # Check if there are tool calls
             if tool_calls:
+                no_tool_streak = 0
                 if not self.silent:
                     print(f"🔧 Agent making {len(tool_calls)} tool call(s)")
                 
-                # Check if this is a direct completion tool call
                 task_completed = False
                 for tool_call in tool_calls:
                     tool_name = tool_call['function']['name']
@@ -240,50 +286,62 @@ class AIAgent:
                     
                     # Special handling for mark_task_complete to extract completion message
                     if tool_name == "mark_task_complete":
-                        task_completed = True
+                        # Only allow task completion after some useful work happened.
+                        has_meaningful_content = len(full_response_content) > 0 or non_completion_tool_calls > 0
+                        
+                        if not has_meaningful_content:
+                            if not self.silent:
+                                print("⚠️ Task completion called too early - continuing work")
+                            continue
+                        
+                        # Execute completion tool and end loop with accumulated assistant content.
+                        tool_result = self.handle_tool_call(tool_call)
+                        messages.append(tool_result)
                         try:
                             tool_args = self._parse_tool_arguments(tool_call['function'].get('arguments'))
                         except Exception:
                             tool_args = {}
-                        completion_message = tool_args.get('completion_message', 'Task completed successfully.')
-                        if not isinstance(completion_message, str):
-                            completion_message = json.dumps(completion_message, default=str)
+                        completion_message = tool_args.get('completion_message')
+                        if completion_message is not None:
+                            if not isinstance(completion_message, str):
+                                completion_message = json.dumps(completion_message, default=str)
+                            completion_message = completion_message.strip()
+                            if completion_message:
+                                completion_message_fallback = completion_message
+                        task_completed = True
                         
                         if not self.silent:
                             print("✅ Task completion tool called - exiting loop")
-                        
-                        # Return the actual completion message instead of generic text
-                        return completion_message
+                        continue
                     
                     # Handle other tools normally
                     tool_result = self.handle_tool_call(tool_call)
                     messages.append(tool_result)
+                    non_completion_tool_calls += 1
                 
-                # If task was completed, we already returned above
                 if task_completed:
+                    finalized = self._finalize_response_content(full_response_content)
+                    if finalized:
+                        return finalized
+                    if completion_message_fallback:
+                        return completion_message_fallback
                     return "Task completed successfully."
             else:
-                # IMPROVED EMPTY RESPONSE HANDLING
-                # If no tool calls, check if we have meaningful content
-                if content and content.strip():
-                    # We have content, this is likely a final response
-                    return content.strip()
-                elif full_response_content:
-                    # We have accumulated content from previous iterations
-                    string_content = [str(item) if not isinstance(item, str) else item for item in full_response_content]
-                    return "\n\n".join(string_content)
-                else:
-                    # No content and no tool calls - this could be an empty response
-                    # Instead of continuing indefinitely, provide a meaningful fallback
-                    if not self.silent:
-                        print("⚠️ Agent provided empty response without tool calls - ending loop")
-                    
-                    # Return a helpful message instead of getting stuck
-                    return "I apologize, but I wasn't able to generate a meaningful response to your request. Please try rephrasing your question or providing more specific details."
+                no_tool_streak += 1
+                if not self.silent:
+                    print("💭 Agent responded without tool calls - continuing loop")
+
+                # If the model repeatedly responds directly without tools, finalize gracefully.
+                if no_tool_streak >= max(1, finalize_after_no_tool_streak):
+                    finalized = self._finalize_response_content(full_response_content)
+                    if finalized:
+                        return finalized
         
         # If max iterations reached, return whatever content we gathered
         if full_response_content:
             string_content = [str(item) if not isinstance(item, str) else item for item in full_response_content]
-            return "\n\n".join(string_content)
+            return self._finalize_response_content(string_content)
+        elif completion_message_fallback:
+            return completion_message_fallback
         else:
             return "I apologize, but I couldn't generate a meaningful response. Please try rephrasing your question."

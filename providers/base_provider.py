@@ -3,7 +3,7 @@ Base provider interface for all AI providers.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 
 class BaseProvider(ABC):
     """Abstract base class for all AI providers."""
@@ -28,7 +28,7 @@ class BaseProvider(ABC):
         pass
     
     @abstractmethod
-    def create_chat_completion(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def create_chat_completion(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Create a chat completion using the provider's API.
         

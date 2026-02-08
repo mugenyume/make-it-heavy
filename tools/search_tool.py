@@ -1,5 +1,7 @@
 from .base_tool import BaseTool
+import warnings
 import requests
+from typing import Any, Dict, List
 
 try:
     from bs4 import BeautifulSoup
@@ -45,10 +47,50 @@ class SearchTool(BaseTool):
             },
             "required": ["query"]
         }
+
+    def _normalize_max_results(self, max_results: int) -> int:
+        """Clamp max results to a safe, useful range."""
+        default_max = int(self.config.get('search', {}).get('max_results', 5))
+        try:
+            requested = int(max_results)
+        except (TypeError, ValueError):
+            requested = default_max
+
+        if requested < 1:
+            requested = default_max
+
+        return max(1, min(requested, 10))
+
+    def _perform_text_search(self, query: str, max_results: int) -> List[Dict[str, Any]]:
+        """Execute DDGS text search while suppressing legacy package rename warnings."""
+        ddgs_module = str(getattr(DDGS, "__module__", ""))
+
+        # Legacy duckduckgo_search emits a forced RuntimeWarning on DDGS() construction.
+        if ddgs_module.startswith("duckduckgo_search"):
+            original_warn = warnings.warn
+
+            def _filtered_warn(message, *args, **kwargs):
+                if "has been renamed to `ddgs`" in str(message):
+                    return None
+                return original_warn(message, *args, **kwargs)
+
+            warnings.warn = _filtered_warn
+            try:
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, max_results=max_results))
+            finally:
+                warnings.warn = original_warn
+
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=max_results))
     
     def execute(self, query: str, max_results: int = 5) -> list:
         """Search the web using DuckDuckGo and fetch page content"""
         try:
+            normalized_query = (query or "").strip()
+            if not normalized_query:
+                return [{"error": "Search query cannot be empty."}]
+
             if DDGS is None:
                 return [{
                     "error": (
@@ -57,17 +99,22 @@ class SearchTool(BaseTool):
                     )
                 }]
 
-            # Use DDGS library
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=max_results))
+            requested_max_results = self._normalize_max_results(max_results)
+            results = self._perform_text_search(normalized_query, requested_max_results)
             
-            simplified_results = []
+            simplified_results: List[Dict[str, Any]] = []
+            seen_urls = set()
             
             for result in results:
                 try:
                     url = result.get('href') or result.get('url')
                     title = result.get('title') or "Untitled"
                     snippet = result.get('body') or result.get('snippet') or ""
+
+                    if url:
+                        if url in seen_urls:
+                            continue
+                        seen_urls.add(url)
 
                     if not url:
                         simplified_results.append({
@@ -85,8 +132,17 @@ class SearchTool(BaseTool):
                         timeout=10
                     )
                     response.raise_for_status()
+
+                    content_type = str(response.headers.get("Content-Type", "")).lower()
+                    is_text_like = (
+                        "text/" in content_type or
+                        "application/json" in content_type or
+                        "application/xml" in content_type
+                    )
                     
-                    if BeautifulSoup is not None:
+                    if not is_text_like:
+                        text = f"Skipped non-text content type: {content_type or 'unknown'}"
+                    elif BeautifulSoup is not None:
                         # Parse HTML with BeautifulSoup when available.
                         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -99,6 +155,7 @@ class SearchTool(BaseTool):
                     else:
                         # Minimal fallback without BeautifulSoup dependency.
                         text = response.text
+
                     # Clean up whitespace
                     text = ' '.join(text.split())
                     
