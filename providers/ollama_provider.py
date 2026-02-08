@@ -27,7 +27,6 @@ class OllamaProvider(BaseProvider):
         
         self.base_url = self.config['base_url'].rstrip('/')
         self.chat_endpoint = f"{self.base_url}/api/chat"
-        self.generate_endpoint = f"{self.base_url}/api/generate"
         self.models_endpoint = f"{self.base_url}/api/tags"
     
     def _validate_config(self):
@@ -119,6 +118,91 @@ class OllamaProvider(BaseProvider):
         # For now, return tools as-is since Ollama supports OpenAI-compatible format
         # This can be extended if Ollama requires specific formatting
         return tools
+
+    def _prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Prepare messages for Ollama by preserving roles/content and normalizing payload shape.
+        """
+        prepared_messages: List[Dict[str, Any]] = []
+        allowed_roles = {'system', 'user', 'assistant', 'tool'}
+
+        for message in messages:
+            role = message.get('role')
+            if role not in allowed_roles:
+                continue
+
+            content = message.get('content', '')
+            if content is None:
+                content = ''
+            elif isinstance(content, (dict, list)):
+                content = json.dumps(content, default=str)
+            elif not isinstance(content, str):
+                content = str(content)
+
+            normalized_message: Dict[str, Any] = {
+                'role': role,
+                'content': content
+            }
+
+            if role == 'assistant' and message.get('tool_calls'):
+                normalized_message['tool_calls'] = message['tool_calls']
+
+            if role == 'tool':
+                tool_call_id = message.get('tool_call_id')
+                name = message.get('name')
+                if tool_call_id:
+                    normalized_message['tool_call_id'] = tool_call_id
+                if name:
+                    normalized_message['name'] = name
+
+            prepared_messages.append(normalized_message)
+
+        if self.config.get('use_nothink', True):
+            prepared_messages.insert(0, {
+                'role': 'system',
+                'content': 'Do not use <think> or <thinking> tags. Respond directly and clearly.'
+            })
+
+        return prepared_messages
+
+    def _normalize_ollama_tool_calls(self, tool_calls: List[Any]) -> List[Dict[str, Any]]:
+        """
+        Normalize Ollama-native tool call payloads into OpenAI-compatible dict tool calls.
+        """
+        normalized_tool_calls: List[Dict[str, Any]] = []
+        if not tool_calls:
+            return normalized_tool_calls
+
+        for index, tool_call in enumerate(tool_calls):
+            if isinstance(tool_call, dict):
+                function_data = tool_call.get('function', {}) or {}
+                name = function_data.get('name')
+                arguments = function_data.get('arguments', {})
+                call_id = tool_call.get('id') or f"call_ollama_{index}"
+            else:
+                function_data = getattr(tool_call, 'function', None)
+                name = getattr(function_data, 'name', None) if function_data else None
+                arguments = getattr(function_data, 'arguments', {})
+                call_id = getattr(tool_call, 'id', None) or f"call_ollama_{index}"
+
+            if not name:
+                continue
+
+            if isinstance(arguments, str):
+                arguments_text = arguments
+            else:
+                arguments_text = json.dumps(arguments, default=str)
+
+            normalized_tool_calls.append({
+                'id': call_id,
+                'type': 'function',
+                'function': {
+                    'name': name,
+                    'arguments': arguments_text
+                }
+            })
+
+        return normalized_tool_calls
     
     def _simulate_tool_calls_from_content(self, content: str, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -227,86 +311,43 @@ class OllamaProvider(BaseProvider):
         """
         try:
             logger.info(f"Creating Ollama chat completion with model: {self.config['model']}")
-            
-            # Add /nothink command and response instructions
-            use_nothink = self.config.get('use_nothink', True)
-            optimized_messages = []
-            
-            if use_nothink:
-                optimized_messages.append({
-                    'role': 'system',
-                    'content': '/nothink\n\nDo not use <think></think> tags or show your thinking process. Provide direct, clean responses without internal monologue.'
-                })
-            
-            # Add instruction for complete responses
-            optimized_messages.append({
-                'role': 'system',
-                'content': 'Always provide complete, thorough responses. Do not truncate or cut off your answers. If generating code, provide the complete, functional code. Do not use thinking tags like <think> or <thinking>.'
-            })
-            
-            # Optimize messages - remove tools from system messages to reduce context
-            for msg in messages:
-                if msg.get('role') == 'system':
-                    # Keep system message but make it more concise for Ollama
-                    content = msg.get('content', '')
-                    if len(content) > 500:
-                        content = content[:500] + "..."
-                    optimized_messages.append({
-                        'role': 'system',
-                        'content': content
-                    })
-                elif msg.get('role') in ['user', 'assistant']:
-                    # Keep user and assistant messages as-is but limit length
-                    content = msg.get('content', '')
-                    if len(content) > 2000:
-                        content = content[:2000] + "..."
-                    optimized_messages.append({
-                        'role': msg['role'],
-                        'content': content
-                    })
-                # Skip tool messages for Ollama as they don't support them well
-            
-            # Prepare request payload with optimizations
+
+            # Prepare request payload
             # Get configurable options with sensible defaults
             options = {
                 'temperature': self.config.get('temperature', 0.7),
                 'top_p': self.config.get('top_p', 0.9),
-                'num_ctx': self.config.get('num_ctx', 8192),  # Increased context window
-                'num_predict': self.config.get('num_predict', -1),  # -1 means no limit (let model decide)
-                'stop': self.config.get('stop', []),  # Custom stop sequences (empty = use model defaults)
+                'num_ctx': self.config.get('num_ctx', 8192),
+                'num_predict': self.config.get('num_predict', -1),
+                'stop': self.config.get('stop', []),
             }
             
             # Remove any None values to avoid API issues
             options = {k: v for k, v in options.items() if v is not None}
             
+            prepared_messages = self._prepare_messages(messages)
             payload = {
                 'model': self.config['model'],
-                'messages': optimized_messages,
+                'messages': prepared_messages,
                 'stream': False,
                 'options': options
             }
-            
-            # Set model name (no /nothink suffix - that's a command, not part of model name)
-            model_name = self.config['model']
-            payload['model'] = model_name
-            
-            # Don't add tools to Ollama as they cause issues - we'll simulate them
-            # if tools:
-            #     converted_tools = self._convert_tools_to_ollama_format(tools)
-            #     if converted_tools:
-            #         payload['tools'] = converted_tools
-            
-            # Use longer timeout for larger models but with connection timeout
-            timeout_seconds = 300  # 5 minutes max
-            if 'qwen' in self.config['model'].lower() or 'llama3.1:70b' in self.config['model'].lower():
-                timeout_seconds = 600  # 10 minutes for very large models
-            
-            # Make request to Ollama with optimized timeout
+
+            native_tools_enabled = self.config.get('native_tools', True)
+            if native_tools_enabled and tools:
+                converted_tools = self._convert_tools_to_ollama_format(tools)
+                if converted_tools:
+                    payload['tools'] = converted_tools
+
+            connect_timeout = self.config.get('connect_timeout', 15)
+            read_timeout = self.config.get('timeout_seconds', 300)
+
+            # Make request to Ollama with configurable timeout
             response = requests.post(
                 self.chat_endpoint,
                 json=payload,
                 headers={'Content-Type': 'application/json'},
-                timeout=(30, timeout_seconds)  # (connection_timeout, read_timeout)
+                timeout=(connect_timeout, read_timeout)
             )
             
             if response.status_code != 200:
@@ -321,9 +362,11 @@ class OllamaProvider(BaseProvider):
             # Clean up thinking tags and unwanted content
             message_content = self._clean_response_content(message_content)
             
-            # Always simulate tool calls for Ollama since native support is limited
-            tool_calls = []
-            if tools and message_content:
+            # Prefer native tool calls and fallback to simulated calls if explicitly enabled.
+            raw_tool_calls = self._safe_get_nested_value(response_data, ['message', 'tool_calls'], [])
+            tool_calls = self._normalize_ollama_tool_calls(raw_tool_calls)
+            simulate_tool_calls = self.config.get('simulate_tool_calls', False)
+            if not tool_calls and simulate_tool_calls and tools and message_content:
                 tool_calls = self._simulate_tool_calls_from_content(message_content, tools)
             
             # Handle usage information (Ollama might not provide this)
@@ -367,7 +410,11 @@ class OllamaProvider(BaseProvider):
             fallback_response = {
                 'choices': [{
                     'message': {
-                        'content': f"The model {self.config['model']} is taking too long to respond. Try using a smaller/faster model like 'llama3.1:8b' or 'phi3:mini'.",
+                        'content': (
+                            f"The model {self.config['model']} is taking too long to respond. "
+                            "Try using a smaller/faster model like 'llama3.1:8b' or 'phi3:mini', "
+                            "or increase ollama.timeout_seconds in config.yaml."
+                        ),
                         'tool_calls': []
                     }
                 }],

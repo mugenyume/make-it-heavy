@@ -26,10 +26,13 @@ class SambaNovaProvider(BaseProvider):
     
     def _validate_config(self):
         """Validate SambaNova configuration."""
-        required_keys = ['api_key', 'base_url', 'model']
+        required_keys = ['api_key', 'base_url']
         for key in required_keys:
-            if key not in self.config:
+            if key not in self.config or not self.config.get(key):
                 raise ValueError(f"Missing required SambaNova config: {key}")
+
+        if str(self.config.get('api_key', '')).strip() == "API_KEY_HERE":
+            raise ValueError("SambaNova API key is not configured. Update sambanova.api_key in config.yaml.")
         
         # Set default model if not specified
         if 'model' not in self.config or not self.config['model']:

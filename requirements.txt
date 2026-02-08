@@ -10,6 +10,7 @@ groq>=0.4.0
 
 # Tools and utilities
 duckduckgo-search>=6.0.0
+beautifulsoup4>=4.12.0
 colorama>=0.4.6
 
 # HTTP and networking

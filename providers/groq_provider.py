@@ -37,11 +37,21 @@ class GroqProvider(BaseProvider):
         """Validate Groq configuration."""
         required_keys = ['api_key']
         for key in required_keys:
-            if key not in self.config:
+            if key not in self.config or not self.config.get(key):
                 raise ValueError(f"Missing required Groq config: {key}")
+
+        if str(self.config.get('api_key', '')).strip() == "API_KEY_HERE":
+            raise ValueError("Groq API key is not configured. Update groq.api_key in config.yaml.")
         
         # Set default model if not specified
         if 'model' not in self.config or not self.config['model']:
+            self.config['model'] = self.DEFAULT_MODEL
+        elif '/' in self.config['model']:
+            logger.warning(
+                "Groq model '%s' looks invalid for Groq API. Falling back to default model '%s'.",
+                self.config['model'],
+                self.DEFAULT_MODEL
+            )
             self.config['model'] = self.DEFAULT_MODEL
     
     def _safe_get_nested_value(self, data: Any, path: List[str], default: Any = None) -> Any:
@@ -95,10 +105,13 @@ class GroqProvider(BaseProvider):
                 'model': self.config['model'],
                 'messages': messages,
                 'temperature': self.config.get('temperature', 0.7),
-                'max_tokens': self.config.get('max_tokens', None),  # None = no limit
                 'top_p': self.config.get('top_p', 1.0),
                 'stream': False
             }
+
+            max_tokens = self.config.get('max_tokens')
+            if max_tokens is not None:
+                request_params['max_tokens'] = max_tokens
             
             # Add tools if provided
             if tools:

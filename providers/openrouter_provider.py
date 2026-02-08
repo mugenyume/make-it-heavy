@@ -22,10 +22,16 @@ class OpenRouterProvider(BaseProvider):
     
     def _validate_config(self):
         """Validate OpenRouter configuration."""
-        required_keys = ['api_key', 'base_url', 'model']
+        required_keys = ['api_key', 'base_url']
         for key in required_keys:
-            if key not in self.config:
+            if key not in self.config or not self.config.get(key):
                 raise ValueError(f"Missing required OpenRouter config: {key}")
+
+        if str(self.config.get('api_key', '')).strip() == "API_KEY_HERE":
+            raise ValueError("OpenRouter API key is not configured. Update openrouter.api_key in config.yaml.")
+
+        if 'model' not in self.config or not self.config['model']:
+            self.config['model'] = self.DEFAULT_MODEL
     
     def create_chat_completion(self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

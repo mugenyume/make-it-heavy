@@ -37,8 +37,11 @@ class CerebrasProvider(BaseProvider):
         """Validate Cerebras configuration."""
         required_keys = ['api_key']
         for key in required_keys:
-            if key not in self.config:
+            if key not in self.config or not self.config.get(key):
                 raise ValueError(f"Missing required Cerebras config: {key}")
+
+        if str(self.config.get('api_key', '')).strip() == "API_KEY_HERE":
+            raise ValueError("Cerebras API key is not configured. Update cerebras.api_key in config.yaml.")
         
         # Set default model if not specified
         if 'model' not in self.config or not self.config['model']:

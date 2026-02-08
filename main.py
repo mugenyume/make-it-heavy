@@ -1,6 +1,4 @@
 import argparse
-import sys
-from agent import AIAgent
 from providers import ProviderFactory
 
 def main():
@@ -28,6 +26,8 @@ def main():
         return
     
     try:
+        from agent import AIAgent
+
         # Initialize agent with optional provider override
         agent = AIAgent(provider_name=args.provider)
         
@@ -39,6 +39,10 @@ def main():
         print("Type 'quit', 'exit', or 'bye' to exit")
         print("-" * 50)
         
+    except ModuleNotFoundError as e:
+        print(f"Missing dependency: {e}")
+        print("Install dependencies with: pip install -r requirements.txt")
+        return
     except Exception as e:
         print(f"Error initializing agent: {e}")
         print("\nMake sure you have:")

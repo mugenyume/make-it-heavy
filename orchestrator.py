@@ -2,7 +2,7 @@ import json
 import yaml
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import List, Dict, Any
 from agent import AIAgent
 
@@ -56,16 +56,24 @@ class TaskOrchestrator:
             # Get AI-generated questions
             response = question_agent.run(generation_prompt)
             
-            # Parse JSON response
-            questions = json.loads(response.strip())
+            # Parse JSON response (also handle wrapped markdown blocks)
+            cleaned_response = response.strip()
+            try:
+                questions = json.loads(cleaned_response)
+            except json.JSONDecodeError:
+                start = cleaned_response.find('[')
+                end = cleaned_response.rfind(']')
+                if start == -1 or end == -1 or start >= end:
+                    raise
+                questions = json.loads(cleaned_response[start:end + 1])
             
             # Validate we got the right number of questions
-            if len(questions) != num_agents:
+            if not isinstance(questions, list) or len(questions) != num_agents:
                 raise ValueError(f"Expected {num_agents} questions, got {len(questions)}")
             
-            return questions
+            return [str(question) for question in questions]
             
-        except (json.JSONDecodeError, ValueError) as e:
+        except Exception:
             # Fallback: create simple variations if AI fails
             return [
                 f"Research comprehensive information about: {user_input}",
@@ -106,6 +114,7 @@ class TaskOrchestrator:
             }
             
         except Exception as e:
+            self.update_agent_progress(agent_id, f"FAILED: {str(e)}")
             # Simple error handling
             return {
                 "agent_id": agent_id,
@@ -241,26 +250,50 @@ class TaskOrchestrator:
         # Execute agents in parallel
         agent_results = []
         
-        with ThreadPoolExecutor(max_workers=self.num_agents) as executor:
+        executor = ThreadPoolExecutor(max_workers=self.num_agents)
+        try:
             # Submit all agent tasks
             future_to_agent = {
                 executor.submit(self.run_agent_parallel, i, subtasks[i]): i 
                 for i in range(self.num_agents)
             }
-            
-            # Collect results as they complete
-            for future in as_completed(future_to_agent, timeout=self.task_timeout):
+
+            # Wait for completion up to global task timeout.
+            done, not_done = wait(future_to_agent.keys(), timeout=self.task_timeout)
+
+            # Collect completed futures.
+            for future in done:
                 try:
                     result = future.result()
                     agent_results.append(result)
                 except Exception as e:
                     agent_id = future_to_agent[future]
+                    self.update_agent_progress(agent_id, f"FAILED: {str(e)}")
                     agent_results.append({
                         "agent_id": agent_id,
-                        "status": "timeout",
-                        "response": f"Agent {agent_id + 1} timed out or failed: {str(e)}",
-                        "execution_time": self.task_timeout
+                        "status": "error",
+                        "response": f"Agent {agent_id + 1} failed: {str(e)}",
+                        "execution_time": 0
                     })
+
+            # Mark timed-out futures without failing the entire orchestration.
+            for future in not_done:
+                agent_id = future_to_agent[future]
+                future.cancel()
+                self.update_agent_progress(agent_id, "TIMEOUT")
+                agent_results.append({
+                    "agent_id": agent_id,
+                    "status": "timeout",
+                    "response": f"Agent {agent_id + 1} timed out after {self.task_timeout} seconds.",
+                    "execution_time": self.task_timeout
+                })
+        finally:
+            # Do not block on pending worker threads after timeout.
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                # Python 3.8 compatibility (cancel_futures unavailable).
+                executor.shutdown(wait=False)
         
         # Sort results by agent_id for consistent output
         agent_results.sort(key=lambda x: x["agent_id"])

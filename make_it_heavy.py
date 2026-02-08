@@ -2,11 +2,12 @@ import time
 import threading
 import sys
 import argparse
-from orchestrator import TaskOrchestrator
 from providers import ProviderFactory
 
 class OrchestratorCLI:
     def __init__(self, provider_name=None):
+        from orchestrator import TaskOrchestrator
+
         self.orchestrator = TaskOrchestrator(provider_name=provider_name)
         self.start_time = None
         self.running = False
@@ -65,9 +66,9 @@ class OrchestratorCLI:
         else:
             return f"{ORANGE}*{RESET} " + "." * 70
     
-    def update_display(self):
+    def update_display(self, force=False):
         """Update the console display with current status"""
-        if not self.running:
+        if not self.running and not force:
             return
             
         # Calculate elapsed time
@@ -120,7 +121,7 @@ class OrchestratorCLI:
             self.running = False
             
             # Final display update
-            self.update_display()
+            self.update_display(force=True)
             
             # Show results
             print("=" * 80)
@@ -135,7 +136,7 @@ class OrchestratorCLI:
             
         except Exception as e:
             self.running = False
-            self.update_display()
+            self.update_display(force=True)
             print(f"\nError during orchestration: {str(e)}")
             return None
     
@@ -218,6 +219,9 @@ def main():
         cli = OrchestratorCLI(provider_name=args.provider)
         cli.interactive_mode()
         
+    except ModuleNotFoundError as e:
+        print(f"Missing dependency: {e}")
+        print("Install dependencies with: pip install -r requirements.txt")
     except Exception as e:
         print(f"Error: {e}")
         print("\nMake sure you have:")
