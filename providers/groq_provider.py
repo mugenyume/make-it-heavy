@@ -62,8 +62,17 @@ class GroqProvider(BaseProvider):
             if key not in self.config or not self.config.get(key):
                 raise ValueError(f"Missing required Groq config: {key}")
 
-        if str(self.config.get('api_key', '')).strip() == "API_KEY_HERE":
+        api_key = str(self.config.get('api_key', '')).strip()
+
+        if api_key == "API_KEY_HERE":
             raise ValueError("Groq API key is not configured. Update groq.api_key in config.yaml.")
+
+        # Catch a common misconfiguration: OpenRouter keys accidentally used for Groq.
+        if api_key.startswith("sk-or-"):
+            raise ValueError(
+                "Groq API key appears to be an OpenRouter key (starts with 'sk-or-'). "
+                "Set groq.api_key to a valid Groq key (typically starts with 'gsk_')."
+            )
         
         if 'model' not in self.config or not self.config['model']:
             self.config['model'] = self.DEFAULT_MODEL

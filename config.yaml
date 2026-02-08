@@ -88,7 +88,11 @@ agent:
 # Orchestrator settings
 orchestrator:
   parallel_agents: 4  # Number of agents to run in parallel
+  max_concurrency: 2  # Actual concurrent workers (helps avoid provider rate-limit bursts)
   task_timeout: 1000   # Timeout in seconds per agent (increased for local models)
+  agent_retry_attempts: 3  # Retry each failed agent task for transient provider errors
+  agent_retry_backoff_seconds: 1.5  # Exponential backoff base delay between retries
+  sequential_fallback_on_total_failure: true  # If all agents fail in parallel, retry sequentially once
   aggregation_strategy: "consensus"  # How to combine results
   
   # Question generation prompt for orchestrator

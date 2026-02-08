@@ -3,7 +3,7 @@ import yaml
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, wait
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from agent import AIAgent
 
 class TaskOrchestrator:
@@ -11,17 +11,33 @@ class TaskOrchestrator:
         # Load configuration
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
-        
-        self.num_agents = self.config['orchestrator']['parallel_agents']
-        self.task_timeout = self.config['orchestrator']['task_timeout']
-        self.aggregation_strategy = self.config['orchestrator']['aggregation_strategy']
+
+        orchestrator_config = self.config.get('orchestrator', {})
+        self.num_agents = int(orchestrator_config.get('parallel_agents', 4))
+        self.task_timeout = int(orchestrator_config.get('task_timeout', 300))
+        self.aggregation_strategy = orchestrator_config.get('aggregation_strategy', 'consensus')
         self.silent = silent
-        self.provider_name = provider_name
-        
-        # Initialize provider using factory
+
+        # Determine provider name once and keep the resolved value.
         if provider_name is None:
             provider_name = self.config.get('provider', {}).get('name', 'openrouter')
+        self.provider_name = provider_name
+
+        configured_max_concurrency = orchestrator_config.get('max_concurrency')
+        if configured_max_concurrency is None:
+            # Groq commonly rate-limits hard for fully parallel heavy fan-out.
+            default_max_concurrency = 2 if self.provider_name == "groq" else self.num_agents
+            self.max_concurrency = max(1, min(default_max_concurrency, self.num_agents))
+        else:
+            self.max_concurrency = max(1, min(int(configured_max_concurrency), self.num_agents))
+
+        self.agent_retry_attempts = max(1, int(orchestrator_config.get('agent_retry_attempts', 3)))
+        self.agent_retry_backoff_seconds = float(orchestrator_config.get('agent_retry_backoff_seconds', 1.5))
+        self.sequential_fallback_on_total_failure = bool(
+            orchestrator_config.get('sequential_fallback_on_total_failure', True)
+        )
         
+        # Initialize provider using factory
         # Get provider-specific configuration
         provider_config = self.config.get(provider_name, {})
         if not provider_config:
@@ -34,6 +50,24 @@ class TaskOrchestrator:
         self.agent_progress = {}
         self.agent_results = {}
         self.progress_lock = threading.Lock()
+
+    def _is_retryable_error(self, exc: Exception) -> bool:
+        """Detect retryable LLM/provider failures."""
+        message = str(exc).lower()
+        retryable_signals = [
+            "rate limit",
+            "429",
+            "timeout",
+            "timed out",
+            "connection",
+            "temporarily unavailable",
+            "service unavailable",
+            "internal server error",
+            "bad gateway",
+            "tool_use_failed",
+            "tool call format error",
+        ]
+        return any(signal in message for signal in retryable_signals)
 
     def _build_fallback_subtasks(self, user_input: str, num_agents: int) -> List[str]:
         """Create deterministic fallback research questions for any agent count."""
@@ -138,34 +172,51 @@ class TaskOrchestrator:
         Run a single agent with the given subtask.
         Returns result dictionary with agent_id, status, and response.
         """
-        try:
-            self.update_agent_progress(agent_id, "PROCESSING...")
-            
-            # Use AIAgent with specified provider
-            agent = AIAgent(silent=True, provider_name=self.provider_name)
-            
-            start_time = time.time()
-            response = agent.run(subtask)
-            execution_time = time.time() - start_time
-            
-            self.update_agent_progress(agent_id, "COMPLETED", response)
-            
-            return {
-                "agent_id": agent_id,
-                "status": "success", 
-                "response": response,
-                "execution_time": execution_time
-            }
-            
-        except Exception as e:
-            self.update_agent_progress(agent_id, f"FAILED: {str(e)}")
-            # Simple error handling
-            return {
-                "agent_id": agent_id,
-                "status": "error",
-                "response": f"Error: {str(e)}",
-                "execution_time": 0
-            }
+        start_time = time.time()
+        last_error: Optional[Exception] = None
+        status_prefix = "PROCESSING..."
+
+        for attempt in range(1, self.agent_retry_attempts + 1):
+            if attempt == 1:
+                self.update_agent_progress(agent_id, status_prefix)
+            else:
+                self.update_agent_progress(agent_id, f"RETRY {attempt}/{self.agent_retry_attempts}...")
+
+            try:
+                # Use AIAgent with specified provider
+                agent = AIAgent(silent=True, provider_name=self.provider_name)
+                response = agent.run(subtask)
+                execution_time = time.time() - start_time
+
+                self.update_agent_progress(agent_id, "COMPLETED", response)
+
+                return {
+                    "agent_id": agent_id,
+                    "status": "success",
+                    "response": response,
+                    "execution_time": execution_time
+                }
+            except Exception as exc:
+                last_error = exc
+                is_retryable = self._is_retryable_error(exc)
+                can_retry = attempt < self.agent_retry_attempts and is_retryable
+
+                if can_retry:
+                    backoff_seconds = self.agent_retry_backoff_seconds * (2 ** (attempt - 1))
+                    self.update_agent_progress(agent_id, f"RETRYING ({attempt}/{self.agent_retry_attempts})")
+                    time.sleep(backoff_seconds)
+                    continue
+                break
+
+        execution_time = time.time() - start_time
+        error_text = str(last_error) if last_error else "Unknown orchestration error."
+        self.update_agent_progress(agent_id, f"FAILED: {error_text}")
+        return {
+            "agent_id": agent_id,
+            "status": "error",
+            "response": f"Error: {error_text}",
+            "execution_time": execution_time
+        }
     
     def aggregate_results(self, agent_results: List[Dict[str, Any]]) -> str:
         """
@@ -194,6 +245,39 @@ class TaskOrchestrator:
                 # Use fallback results if we have any non-error responses
                 successful_results = fallback_results
             else:
+                failure_lines = []
+                for result in agent_results:
+                    if result.get("status") in ("error", "timeout"):
+                        failure_lines.append(str(result.get("response", "")).strip())
+                failure_lines = [line for line in failure_lines if line][:3]
+
+                auth_markers = ["invalid api key", "invalid_api_key", "authentication failed"]
+                has_auth_failure = any(
+                    any(marker in line.lower() for marker in auth_markers)
+                    for line in failure_lines
+                )
+                if has_auth_failure:
+                    provider_hint = self.provider_name or self.config.get('provider', {}).get('name', 'selected')
+                    base_message = (
+                        f"Authentication failed for provider '{provider_hint}'. "
+                        "Please update the API key in config.yaml and retry."
+                    )
+                    if str(provider_hint).lower() == "groq":
+                        base_message += " For Groq, use a valid key that typically starts with 'gsk_'."
+                    if failure_lines:
+                        first_reason = failure_lines[0][:320]
+                        return f"{base_message}\n\nDetails:\n- {first_reason}"
+                    return base_message
+
+                if failure_lines:
+                    formatted = "\n".join(f"- {line[:280]}" for line in failure_lines)
+                    return (
+                        "All agents failed to provide meaningful results.\n\n"
+                        "Top failure reasons:\n"
+                        f"{formatted}\n\n"
+                        "Try reducing concurrency (`orchestrator.max_concurrency`), "
+                        "or re-run with a simpler query."
+                    )
                 return "All agents failed to provide meaningful results. Please try again with a different question."
         
         # Extract responses for aggregation
@@ -294,7 +378,7 @@ class TaskOrchestrator:
         # Execute agents in parallel
         agent_results = []
         
-        executor = ThreadPoolExecutor(max_workers=self.num_agents)
+        executor = ThreadPoolExecutor(max_workers=self.max_concurrency)
         try:
             # Submit all agent tasks
             future_to_agent = {
@@ -341,6 +425,21 @@ class TaskOrchestrator:
         
         # Sort results by agent_id for consistent output
         agent_results.sort(key=lambda x: x["agent_id"])
+
+        # If everything failed, attempt one sequential rerun for failed agents.
+        if (
+            self.sequential_fallback_on_total_failure
+            and agent_results
+            and all(result.get("status") in ("error", "timeout") for result in agent_results)
+            and self.max_concurrency > 1
+        ):
+            sequential_results = []
+            for result in agent_results:
+                agent_id = int(result["agent_id"])
+                sequential_result = self.run_agent_parallel(agent_id, subtasks[agent_id])
+                sequential_results.append(sequential_result)
+            sequential_results.sort(key=lambda x: x["agent_id"])
+            agent_results = sequential_results
         
         # Aggregate results
         final_result = self.aggregate_results(agent_results)
