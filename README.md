@@ -2,6 +2,10 @@
 
 > **🙏 Acknowledgment**: This is an advanced, supercharged version of the original brilliant concept by [Doriandarko](https://github.com/Doriandarko). All credit for the foundational idea and initial implementation goes to the mad genius himself. This version just takes it to the next level with 6 AI providers, enhanced orchestration, and production-ready features.
 
+
+<video src="https://raw.githubusercontent.com/mugenyume/make-it-heavy/main/example/example.mp4" controls width="600"></video>
+
+
 ## 💎 Support This Crazy Work
 
 If you're loving this advanced multi-agent madness and want to see more insane AI experiments, consider supporting the development! Your support fuels more cutting-edge AI tools and keeps the innovation flowing.
