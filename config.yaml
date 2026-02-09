@@ -1,6 +1,6 @@
 # Provider Configuration
 provider:
-  name: "openrouter"  # Options: "openrouter", "mistralai", "sambanova", "cerebras", "ollama", "groq"
+  name: "openrouter"  # Options: "openrouter", "mistralai", "sambanova", "cerebras", "ollama", "groq", "nvidia"
   # Default model for each provider will be used if not specified
 
 # Provider-specific configurations
@@ -17,20 +17,20 @@ openrouter:
 mistralai:
   api_key: "API_KEY_HERE"
   base_url: "https://api.mistral.ai/v1"
-  model: "mistral-large-latest"
+  model: "mistral-medium-latest"
 
 sambanova:
   api_key: "API_KEY_HERE"
   base_url: "https://api.sambanova.ai/v1"
-  model: "DeepSeek-V3-0324"
+  model: "Qwen3-235B"
 
 cerebras:
   api_key: "API_KEY_HERE"
-  model: "llama-4-maverick-17b-128e-instruct"  # Options: llama3.1-8b, llama3.1-70b
+  model: "zai-glm-4.7"  # Options: zai-glm-4.7, llama-3.3-70b, llama-3.1-8b, llama-3.1-70b
 
 ollama:
   base_url: "http://localhost:11434"  # Default Ollama server URL
-  model: "qwen3:latest"  # Your preferred model (keeping as requested) [model needs to support tools]
+  model: "huihui_ai/lfm2.5-abliterated:1.2b"  # Your preferred model (keeping as requested) [model needs to support tools]
   use_nothink: true  # Send /nothink command to disable thinking process and save resources
   native_tools: true  # Use Ollama's native tool calling support when available
   simulate_tool_calls: false  # Fallback heuristic tool calling for models without native support
@@ -47,10 +47,18 @@ ollama:
   # Recommended models for speed: phi3:mini, llama3.1:8b, mistral:7b
   # Large models like qwen3:latest may timeout - use smaller models for better performance
 
+nvidia:
+  api_key: "API_KEY_HERE"
+  base_url: "https://integrate.api.nvidia.com/v1"
+  model: "deepseek-ai/deepseek-v3.1-terminus"
+  max_tokens: 16384
+  temperature: 0.7
+  top_p: 1.0
+
 groq:
   api_key: "API_KEY_HERE"
-  model: "llama-3.3-70b-versatile"
-  temperature: 0.8      # Creativity level (0.0-1.0)
+  model: "moonshotai/kimi-k2-instruct-0905"
+  temperature: 0.7      # Creativity level (0.0-1.0)
   max_tokens: 8192      # Increased for better responses
   top_p: 1.0            # Nucleus sampling (0.0-1.0)
 
@@ -94,6 +102,7 @@ orchestrator:
   agent_retry_backoff_seconds: 1.5  # Exponential backoff base delay between retries
   sequential_fallback_on_total_failure: true  # If all agents fail in parallel, retry sequentially once
   aggregation_strategy: "consensus"  # How to combine results
+  agent_stagger_seconds: 5.0  # Delay between agent launches (helps avoid rate-limit bursts)
   
   # Question generation prompt for orchestrator
   question_generation_prompt: |

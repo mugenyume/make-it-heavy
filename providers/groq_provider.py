@@ -76,13 +76,6 @@ class GroqProvider(BaseProvider):
         
         if 'model' not in self.config or not self.config['model']:
             self.config['model'] = self.DEFAULT_MODEL
-        elif '/' in self.config['model']:
-            logger.warning(
-                "Groq model '%s' looks invalid for Groq API. Falling back to default model '%s'.",
-                self.config['model'],
-                self.DEFAULT_MODEL
-            )
-            self.config['model'] = self.DEFAULT_MODEL
     
     def _serialize_tool_call(self, tool_call) -> Optional[Dict[str, Any]]:
         """

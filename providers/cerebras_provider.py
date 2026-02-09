@@ -3,6 +3,7 @@ Cerebras provider implementation using the official Cerebras Cloud SDK.
 """
 
 import logging
+import time
 from typing import Dict, List, Any, Optional
 
 try:
@@ -22,7 +23,7 @@ class CerebrasProvider(BaseProvider):
     
     DISPLAY_NAME = "Cerebras"
     DESCRIPTION = "Cerebras - Ultra-fast AI inference with wafer-scale processors"
-    DEFAULT_MODEL = "llama3.1-70b"
+    DEFAULT_MODEL = "llama-3.3-70b"
     
     def __init__(self, config: dict):
         if not CEREBRAS_AVAILABLE:
@@ -103,7 +104,25 @@ class CerebrasProvider(BaseProvider):
             if tools:
                 request_params['tools'] = tools
             
-            response = self.client.chat.completions.create(**request_params)
+            # Retry with exponential backoff for rate limiting
+            max_retries = 5
+            last_error = None
+            for attempt in range(max_retries):
+                try:
+                    response = self.client.chat.completions.create(**request_params)
+                    break
+                except Exception as retry_err:
+                    err_msg = str(retry_err).lower()
+                    is_rate_limit = any(s in err_msg for s in ["429", "too_many_requests", "queue_exceeded", "high traffic"])
+                    if is_rate_limit and attempt < max_retries - 1:
+                        wait_time = (2 ** attempt) * 3  # 3, 6, 12, 24 seconds
+                        logger.warning(f"Cerebras rate limited, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait_time)
+                        last_error = retry_err
+                        continue
+                    raise
+            else:
+                raise last_error
             
             # Extract values safely with null handling
             try:
@@ -150,24 +169,8 @@ class CerebrasProvider(BaseProvider):
         except Exception as e:
             logger.error(f"Cerebras API call failed: {str(e)}")
             logger.error(f"Error type: {type(e).__name__}")
-            
-            # Provide a safe fallback response
-            fallback_response = {
-                'choices': [{
-                    'message': {
-                        'content': f"Error: Cerebras API call failed - {str(e)}",
-                        'tool_calls': []
-                    }
-                }],
-                'usage': {
-                    'prompt_tokens': 0,
-                    'completion_tokens': 0,
-                    'total_tokens': 0
-                }
-            }
-            
-            logger.warning("Returning fallback response due to API failure")
-            return fallback_response
+            # Raise the exception so orchestrator can retry and show actual error
+            raise Exception(f"Cerebras API call failed: {str(e)}")
     
     def get_model_name(self) -> str:
         """Get the current model name."""

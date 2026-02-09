@@ -25,8 +25,9 @@ class TaskOrchestrator:
 
         configured_max_concurrency = orchestrator_config.get('max_concurrency')
         if configured_max_concurrency is None:
-            # Groq commonly rate-limits hard for fully parallel heavy fan-out.
-            default_max_concurrency = 2 if self.provider_name == "groq" else self.num_agents
+            # Groq and Cerebras commonly rate-limit hard for fully parallel heavy fan-out.
+            rate_limited_providers = {"groq", "cerebras"}
+            default_max_concurrency = 1 if self.provider_name in rate_limited_providers else self.num_agents
             self.max_concurrency = max(1, min(default_max_concurrency, self.num_agents))
         else:
             self.max_concurrency = max(1, min(int(configured_max_concurrency), self.num_agents))
@@ -36,6 +37,11 @@ class TaskOrchestrator:
         self.sequential_fallback_on_total_failure = bool(
             orchestrator_config.get('sequential_fallback_on_total_failure', True)
         )
+        # Stagger delay between agent launches to avoid rate-limit bursts
+        self.agent_stagger_seconds = float(orchestrator_config.get('agent_stagger_seconds', 0))
+        rate_limited_providers = {"groq", "cerebras"}
+        if self.agent_stagger_seconds == 0 and self.provider_name in rate_limited_providers:
+            self.agent_stagger_seconds = 2.0
         
         # Initialize provider using factory
         # Get provider-specific configuration
@@ -49,6 +55,7 @@ class TaskOrchestrator:
         # Track agent progress
         self.agent_progress = {}
         self.agent_results = {}
+        self.synthesis_status = None  # None = not started, "SYNTHESIZING..." or "DONE"
         self.progress_lock = threading.Lock()
 
     def _is_retryable_error(self, exc: Exception) -> bool:
@@ -57,6 +64,9 @@ class TaskOrchestrator:
         retryable_signals = [
             "rate limit",
             "429",
+            "too_many_requests",
+            "queue_exceeded",
+            "high traffic",
             "timeout",
             "timed out",
             "connection",
@@ -309,6 +319,10 @@ class TaskOrchestrator:
         if len(valid_responses) == 1:
             return valid_responses[0]
         
+        # Signal synthesis phase
+        with self.progress_lock:
+            self.synthesis_status = "SYNTHESIZING..."
+
         # Create synthesis agent to combine all responses
         synthesis_agent = AIAgent(silent=True, provider_name=self.provider_name)
         
@@ -331,6 +345,8 @@ class TaskOrchestrator:
         # Get the synthesized response
         try:
             final_answer = synthesis_agent.run(synthesis_prompt)
+            with self.progress_lock:
+                self.synthesis_status = "COMPLETED"
             if final_answer and final_answer.strip():
                 return final_answer.strip()
             else:
@@ -357,6 +373,11 @@ class TaskOrchestrator:
         """Get current progress status for all agents"""
         with self.progress_lock:
             return self.agent_progress.copy()
+
+    def get_synthesis_status(self) -> Optional[str]:
+        """Get current synthesis status."""
+        with self.progress_lock:
+            return self.synthesis_status
     
     def orchestrate(self, user_input: str):
         """
@@ -367,6 +388,8 @@ class TaskOrchestrator:
         # Reset progress tracking
         self.agent_progress = {}
         self.agent_results = {}
+        with self.progress_lock:
+            self.synthesis_status = None
         
         # Decompose task into subtasks
         subtasks = self.decompose_task(user_input, self.num_agents)
@@ -380,11 +403,13 @@ class TaskOrchestrator:
         
         executor = ThreadPoolExecutor(max_workers=self.max_concurrency)
         try:
-            # Submit all agent tasks
-            future_to_agent = {
-                executor.submit(self.run_agent_parallel, i, subtasks[i]): i 
-                for i in range(self.num_agents)
-            }
+            # Submit all agent tasks with optional stagger delay
+            future_to_agent = {}
+            for i in range(self.num_agents):
+                future = executor.submit(self.run_agent_parallel, i, subtasks[i])
+                future_to_agent[future] = i
+                if self.agent_stagger_seconds > 0 and i < self.num_agents - 1:
+                    time.sleep(self.agent_stagger_seconds)
 
             # Wait for completion up to global task timeout.
             done, not_done = wait(future_to_agent.keys(), timeout=self.task_timeout)

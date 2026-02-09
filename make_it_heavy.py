@@ -255,6 +255,23 @@ class OrchestratorCLI:
                 f"{self.style.color(status, CLIStyle.DIM, CLIStyle.GRAY)}"
             )
         render_panel(self.style, "Agent Progress", agent_lines)
+
+        # Show synthesis status if available
+        synthesis_status = self.orchestrator.get_synthesis_status()
+        if synthesis_status is not None:
+            if "SYNTHESIZING" in synthesis_status.upper():
+                synth_color = CLIStyle.ORANGE
+                synth_bar = self.style.color("▣" * (max(18, min(56, terminal_width() - 52)) // 2), CLIStyle.ORANGE)
+            else:
+                synth_color = CLIStyle.GREEN
+                synth_bar = self.style.color("■" * max(18, min(56, terminal_width() - 52)), CLIStyle.GREEN)
+            synth_line = (
+                f"{self.style.color('Synthesis', CLIStyle.BOLD, CLIStyle.CYAN)} "
+                f"{synth_bar} "
+                f"{self.style.color(synthesis_status, CLIStyle.DIM, CLIStyle.GRAY)}"
+            )
+            render_panel(self.style, "Synthesis", [synth_line])
+
         sys.stdout.flush()
 
     def progress_monitor(self):

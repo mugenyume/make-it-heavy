@@ -7,11 +7,14 @@
 If you're loving this advanced multi-agent madness and want to see more insane AI experiments, consider supporting the development! Your support fuels more cutting-edge AI tools and keeps the innovation flowing.
 
 **🚀 Crypto Donations (Preferred)**:
-- **Bitcoin (BTC)**: `bc1qfxxnzapmjkewsuvg88lh9cutr0culq8a2djuyw`
-- **Ethereum (ETH)**: `0xD46028573f52692727aB195CCC4aaF6e5bDD6D98`
-- **Solana (SOL)**: `HiJeHzBUNoEXV4fCYuLTfHWKDEfJErL7wV3Z8jjicBWD`
-- **BNB**: `0xD46028573f52692727aB195CCC4aaF6e5bDD6D98`
-- **Toncoin (TON)**: `UQBpBtlb_lXeSwsyj3zHKUhW7nfoBTcvvDkfAouV3xIyhYVU`
+- **Bitcoin (BTC)**: `bc1qqeu8hr9pc6fh9w00z7dq34cca6cv3whc64ke9p`
+- **Ethereum (ETH)**: `0xf2ce7f12c402EC6b8b34D8f20B6E3892a81C504a`
+- **Solana (SOL)**: `C1pSFTgWYm4gZuYTKGhS95ABaZ3avLes7MESBVZFz7G4`
+- **BNB**: `0xf2ce7f12c402EC6b8b34D8f20B6E3892a81C504a`
+- **Toncoin (TON)**: `UQBALqcqtW3GU8cg-4fGhR46hB14fSAZF4NIg1yu8D-MVN-T`
+- **USDT ERC20:** `0xf2ce7f12c402EC6b8b34D8f20B6E3892a81C504a`
+- **XRP:** `rPEeZBosNjyRBGN2CnpQ4J716tHvKmcE2g`
+- **Litecoin:** `LYo9PTfbT2VSxv7XKmh5FG5dovK3yJTB2B`
 
 **🌟 Other Ways to Support**:
 - **Ko-fi**: `https://ko-fi.com/aiophos`
@@ -28,12 +31,13 @@ A Python framework to emulate **Grok heavy** functionality using a powerful mult
 ## 🌟 Features
 
 - **🧠 Grok heavy Emulation**: Multi-agent system that delivers deep, comprehensive analysis like Grok heavy mode
-- **🔀 Parallel Intelligence**: Deploy 4 specialized agents simultaneously for maximum insight coverage
+- **🔀 Parallel & Sequential Intelligence**: Choose between parallel agents for speed or sequential for rate-limit avoidance
 - **🎯 Dynamic Question Generation**: AI creates custom research questions tailored to each query
-- **⚡ Real-time Orchestration**: Live visual feedback during multi-agent execution
+- **⚡ Real-time Orchestration**: Live visual feedback during multi-agent execution with synthesis progress
 - **🛠️ Hot-Swappable Tools**: Automatically discovers and loads tools from the `tools/` directory
 - **🔄 Intelligent Synthesis**: Combines multiple agent perspectives into unified, comprehensive answers
 - **🎮 Single Agent Mode**: Run individual agents for simpler tasks with full tool access
+- **🔌 7 AI Providers**: OpenRouter, MistralAI, SambaNova, Cerebras, Ollama, Groq, NVIDIA NIM
 
 ## 🚀 Quick Start
 
@@ -198,8 +202,10 @@ agent:
 
 # Orchestrator settings
 orchestrator:
-  parallel_agents: 4  # Number of parallel agents
-  task_timeout: 300   # Timeout per agent (seconds)
+  parallel_agents: 4        # Number of parallel agents
+  max_concurrency: 2        # Concurrent workers (1 = sequential)
+  agent_stagger_seconds: 0  # Delay between agent launches (2.0 for Groq)
+  task_timeout: 300         # Timeout per agent (seconds)
   
   # Dynamic question generation prompt
   question_generation_prompt: |
@@ -254,34 +260,95 @@ class MyCustomTool(BaseTool):
 
 ### Multiple AI Providers
 
-Make It Heavy supports 6 different AI providers:
+Make It Heavy supports 7 different AI providers:
+
+| Provider | Best For | Default Model |
+|----------|----------|---------------|
+| **OpenRouter** | Access to 100+ models | `moonshotai/kimi-k2` |
+| **MistralAI** | Advanced reasoning with function calling | `mistral-large-latest` |
+| **SambaNova** | Enterprise-grade inference | `DeepSeek-V3-0324` |
+| **Cerebras** | Ultra-fast wafer-scale inference | `llama-3.3-70b` |
+| **Ollama** | Private, local inference | `qwen3:latest` |
+| **Groq** | Lightning-fast LPU inference | `llama-3.3-70b-versatile` |
+| **NVIDIA NIM** | GPU-accelerated model inference | `minimaxai/minimax-m2.1` |
 
 ```yaml
 # Cloud Providers
 openrouter:
-  model: "anthropic/claude-3.5-sonnet"     # For complex reasoning
-  model: "openai/gpt-4.1-mini"             # For cost efficiency  
+  api_key: "YOUR_KEY"
+  base_url: "https://openrouter.ai/api/v1"
+  model: "moonshotai/kimi-k2"
+
+mistralai:
+  api_key: "YOUR_KEY"
+  base_url: "https://api.mistral.ai/v1"
+  model: "mistral-large-latest"
 
 sambanova:
-  model: "DeepSeek-V3-0324"                # For cost-effective inference
+  api_key: "YOUR_KEY"
+  base_url: "https://api.sambanova.ai/v1"
+  model: "DeepSeek-V3-0324"
 
 cerebras:
-  model: "llama3.1-70b"                    # For ultra-fast inference
+  api_key: "YOUR_KEY"
+  model: "llama-3.3-70b"
 
 groq:
-  model: "llama-3.3-70b-versatile"         # For lightning-fast inference
+  api_key: "YOUR_KEY"
+  model: "llama-3.3-70b-versatile"
+
+nvidia:
+  api_key: "YOUR_KEY"
+  base_url: "https://integrate.api.nvidia.com/v1"
+  model: "minimaxai/minimax-m2.1"
 
 # Local Provider
 ollama:
-  model: "llama3.1:8b"                     # For private, local inference
+  base_url: "http://localhost:11434"
+  model: "qwen3:latest"
 ```
 
 **Provider Selection**:
 ```bash
+python make_it_heavy.py --provider openrouter  # Multi-model access
 python make_it_heavy.py --provider groq        # Lightning-fast inference
 python make_it_heavy.py --provider cerebras    # Ultra-fast cloud
 python make_it_heavy.py --provider ollama      # Private local
 python make_it_heavy.py --provider sambanova   # Cost-effective
+python make_it_heavy.py --provider mistralai   # Advanced reasoning
+python make_it_heavy.py --provider nvidia      # GPU-accelerated
+```
+
+### Parallel vs Sequential Execution
+
+Control how agents execute with concurrency settings:
+
+```yaml
+orchestrator:
+  parallel_agents: 4        # Total number of agents
+  max_concurrency: 4        # How many run simultaneously (parallel)
+  agent_stagger_seconds: 0  # Delay between agent launches
+```
+
+**Execution Modes:**
+
+| Mode | `max_concurrency` | `agent_stagger_seconds` | Best For |
+|------|-------------------|------------------------|----------|
+| **Full Parallel** | `4` (or equal to agents) | `0` | Fast providers, no rate limits |
+| **Limited Parallel** | `2` | `0` | Moderate rate limiting |
+| **Sequential** | `1` | `0` | Heavy rate limiting (default for Groq) |
+| **Staggered** | `2` | `2.0` | Spread API calls over time |
+
+**Provider-Specific Defaults:**
+- **Groq, Cerebras**: `max_concurrency: 1`, `agent_stagger_seconds: 2.0` (avoids rate limits)
+- **Others**: `max_concurrency: <parallel_agents>`, `agent_stagger_seconds: 0`
+
+**Example - Conservative Rate-Limited Setup:**
+```yaml
+orchestrator:
+  parallel_agents: 4
+  max_concurrency: 1        # Run one at a time
+  agent_stagger_seconds: 3  # 3 second delay between starts
 ```
 
 ### Adjusting Agent Count
@@ -363,12 +430,22 @@ synthesis_agent = OpenRouterAgent(silent=False)  # Enable debug output
 ```
 make it heavy/
 ├── main.py                 # Single agent CLI
-├── make_it_heavy.py         # Multi-agent orchestrator CLI  
+├── make_it_heavy.py        # Multi-agent orchestrator CLI  
 ├── agent.py                # Core agent implementation
 ├── orchestrator.py         # Multi-agent orchestration logic
 ├── config.yaml             # Configuration file
 ├── requirements.txt        # Python dependencies
 ├── README.md               # This file
+├── providers/              # AI provider implementations
+│   ├── __init__.py         # Provider factory & registry
+│   ├── base_provider.py    # Base provider interface
+│   ├── openrouter_provider.py
+│   ├── mistral_provider.py
+│   ├── sambanova_provider.py
+│   ├── cerebras_provider.py
+│   ├── ollama_provider.py
+│   ├── groq_provider.py
+│   └── nvidia_provider.py  # NVIDIA NIM support
 └── tools/                  # Tool system
     ├── __init__.py         # Auto-discovery system
     ├── base_tool.py        # Tool base class
@@ -406,9 +483,12 @@ See [LICENSE](LICENSE) file for full details.
 **Ready to make it heavy?** 🚀
 
 ```bash
-python make_it_heavy.py --provider groq  # Lightning fast
-python make_it_heavy.py --provider ollama # Private & local
-python make_it_heavy.py --provider cerebras # Ultra-fast cloud
+python make_it_heavy.py --provider groq      # Lightning fast (sequential by default)
+python make_it_heavy.py --provider ollama    # Private & local
+python make_it_heavy.py --provider cerebras  # Ultra-fast cloud
+python make_it_heavy.py --provider nvidia    # GPU-accelerated inference
+python make_it_heavy.py --provider openrouter # Access 100+ models
+python make_it_heavy.py --list-providers     # See all available providers
 ```
 
    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Doriandarko/make-it-heavy&type=Date" />

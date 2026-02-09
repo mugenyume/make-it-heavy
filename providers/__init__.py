@@ -16,7 +16,8 @@ class ProviderFactory:
         'sambanova': 'providers.sambanova_provider:SambaNovaProvider',
         'cerebras': 'providers.cerebras_provider:CerebrasProvider',
         'ollama': 'providers.ollama_provider:OllamaProvider',
-        'groq': 'providers.groq_provider:GroqProvider'
+        'groq': 'providers.groq_provider:GroqProvider',
+        'nvidia': 'providers.nvidia_provider:NvidiaProvider'
     }
 
     _provider_metadata: Dict[str, Dict[str, str]] = {
@@ -38,7 +39,7 @@ class ProviderFactory:
         'cerebras': {
             'display_name': 'Cerebras',
             'description': 'Cerebras - Ultra-fast AI inference with wafer-scale processors',
-            'default_model': 'llama3.1-70b'
+            'default_model': 'llama-3.3-70b'
         },
         'ollama': {
             'display_name': 'Ollama',
@@ -49,6 +50,11 @@ class ProviderFactory:
             'display_name': 'Groq',
             'description': 'Groq - Ultra-fast LLM inference with specialized hardware',
             'default_model': 'llama-3.3-70b-versatile'
+        },
+        'nvidia': {
+            'display_name': 'NVIDIA NIM',
+            'description': 'NVIDIA NIM - GPU-accelerated AI model inference',
+            'default_model': 'minimaxai/minimax-m2.1'
         }
     }
 
@@ -89,7 +95,7 @@ class ProviderFactory:
         Create a provider instance based on the provider name.
         
         Args:
-            provider_name: Name of the provider ('openrouter', 'mistralai', 'sambanova', 'cerebras', 'ollama', 'groq')
+            provider_name: Name of the provider ('openrouter', 'mistralai', 'sambanova', 'cerebras', 'ollama', 'groq', 'nvidia')
             config: Configuration dictionary containing provider-specific settings
             
         Returns:
