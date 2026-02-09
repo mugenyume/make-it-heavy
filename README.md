@@ -3,7 +3,8 @@
 > **🙏 Acknowledgment**: This is an advanced, supercharged version of the original brilliant concept by [Doriandarko](https://github.com/Doriandarko). All credit for the foundational idea and initial implementation goes to the mad genius himself. This version just takes it to the next level with 6 AI providers, enhanced orchestration, and production-ready features.
 
 
-[![Example demo](https://img.youtube.com/vi/dQw4w9WgXcQ/0.jpg)](https://vimeo.com/1163426289)
+[![Demo video](https://i.vimeocdn.com/video/2119631887-c9f853083204153c02daae517e4aa5dde60bb7d81a03dbbf89c46b0de89d92e6-d_295x166?region=us)](https://vimeo.com/1163426289)
+
 
 
 
